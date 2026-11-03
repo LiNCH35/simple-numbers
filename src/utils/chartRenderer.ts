@@ -1,10 +1,19 @@
 import { calculateSequenceDifferences, getDifferenceRange, DifferencePoint } from './chartCalculations';
-import { isRealPrime } from '../data/primeNumbers';
+import { maxOf, minOf } from './arrayStats';
 
 export interface ChartConfig {
   width: number;
   height: number;
   padding: number;
+}
+
+function niceStep(range: number, targetTicks: number): number {
+  const raw = range / targetTicks;
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+  const normalized = raw / magnitude;
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return nice * magnitude;
 }
 
 export class ChartRenderer {
@@ -20,8 +29,8 @@ export class ChartRenderer {
       padding: 50
     };
     this.colors = [
-      '#007bff', '#dc3545', '#28a745', '#ffc107', '#6f42c1',
-      '#fd7e14', '#20c997', '#e83e8c', '#6c757d', '#343a40'
+      '#34557d', '#a3543f', '#4f7d4f', '#8a6aa0', '#b08a3e',
+      '#4f8a8a', '#96546b', '#5a6b9e', '#7d5434', '#4a6b52'
     ];
   }
   
@@ -31,8 +40,8 @@ export class ChartRenderer {
   drawAxes(): void {
     const { ctx, config } = this;
     
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#1c1c1a';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(config.padding, config.padding);
     ctx.lineTo(config.padding, config.height - config.padding);
@@ -46,22 +55,24 @@ export class ChartRenderer {
   drawYGrid(minDiff: number, maxDiff: number): void {
     const { ctx, config } = this;
     const chartHeight = config.height - 2 * config.padding;
-    
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 0.5;
-    ctx.fillStyle = '#666';
-    ctx.font = '10px Arial';
+    const range = maxDiff - minDiff;
+    const step = niceStep(range, 8);
+    const start = Math.ceil(minDiff / step) * step;
+
+    ctx.strokeStyle = '#ececea';
+    ctx.lineWidth = 1;
+    ctx.fillStyle = '#8a8a84';
+    ctx.font = '10px system-ui, sans-serif';
     ctx.textAlign = 'right';
-    
-    // Рисуем целочисленные линии сетки
-    for (let diff = minDiff; diff <= maxDiff; diff++) {
-      const y = config.height - config.padding - ((diff - minDiff) / (maxDiff - minDiff)) * chartHeight;
-      
+
+    for (let diff = start; diff <= maxDiff; diff += step) {
+      const y = config.height - config.padding - ((diff - minDiff) / (range || 1)) * chartHeight;
+
       ctx.beginPath();
       ctx.moveTo(config.padding, y);
       ctx.lineTo(config.width - config.padding, y);
       ctx.stroke();
-      
+
       ctx.fillText(diff.toString(), config.padding - 10, y + 3);
     }
   }
@@ -72,20 +83,21 @@ export class ChartRenderer {
   drawXGrid(xMax: number): void {
     const { ctx, config } = this;
     const chartWidth = config.width - 2 * config.padding;
-    const xStep = 5;
-    
+    const step = niceStep(xMax, 12);
+
     ctx.textAlign = 'center';
-    
-    for (let x = 0; x <= xMax; x += xStep) {
+
+    for (let x = 0; x <= xMax; x += step) {
       const xPos = config.padding + (x / xMax) * chartWidth;
-      
-      ctx.strokeStyle = '#e0e0e0';
+
+      ctx.strokeStyle = '#ececea';
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(xPos, config.padding);
       ctx.lineTo(xPos, config.height - config.padding);
       ctx.stroke();
-      
-      ctx.fillStyle = '#666';
+
+      ctx.fillStyle = '#8a8a84';
       ctx.fillText(x.toString(), xPos, config.height - config.padding + 20);
     }
   }
@@ -137,18 +149,20 @@ export class ChartRenderer {
     this.ctx.clearRect(0, 0, this.config.width, this.config.height);
     
     // Находим параметры для осей
-    const maxX = Math.max(...averageDifferences.map(d => d.x));
+    const maxX = maxOf(averageDifferences.map(d => d.x));
     const xMax = Math.ceil(maxX / 5) * 5;
-    const minY = Math.min(...averageDifferences.map(d => d.averageDifference));
-    const maxY = Math.max(...averageDifferences.map(d => d.averageDifference));
+    const minY = minOf(averageDifferences.map(d => d.averageDifference));
+    const maxY = maxOf(averageDifferences.map(d => d.averageDifference));
+    const safeMinY = maxY === minY ? minY - 1 : minY;
+    const safeMaxY = maxY === minY ? maxY + 1 : maxY;
     
     // Рисуем базовые элементы
     this.drawAxes();
-    this.drawYGrid(minY, maxY);
+    this.drawYGrid(safeMinY, safeMaxY);
     this.drawXGrid(xMax);
     
     // Рисуем усредненные разницы
-    this.drawAverageDifferencePoints(averageDifferences, xMax, minY, maxY);
+    this.drawAverageDifferencePoints(averageDifferences, xMax, safeMinY, safeMaxY);
     
     // Рисуем подписи
     this.drawAxisLabels();
@@ -231,9 +245,9 @@ export class ChartRenderer {
    */
   drawLegend(sequenceCount: number): void {
     const { ctx, config } = this;
-    
-    ctx.fillStyle = '#333';
-    ctx.font = '12px Arial';
+
+    ctx.fillStyle = '#6f6f6a';
+    ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'left';
     
     for (let i = 0; i < sequenceCount; i++) {
@@ -251,9 +265,9 @@ export class ChartRenderer {
    */
   drawAxisLabels(): void {
     const { ctx, config } = this;
-    
-    ctx.fillStyle = '#333';
-    ctx.font = '12px Arial';
+
+    ctx.fillStyle = '#6f6f6a';
+    ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
     
     // Подпись оси X
@@ -278,7 +292,7 @@ export class ChartRenderer {
     
     // Находим общие параметры
     const allNumbers = sequences.flat();
-    const maxNumber = Math.max(...allNumbers);
+    const maxNumber = maxOf(allNumbers);
     const xMax = Math.ceil(maxNumber / 5) * 5;
     const { min, max } = getDifferenceRange(sequences, xMax);
     
@@ -310,7 +324,7 @@ export class ChartRenderer {
     this.ctx.clearRect(0, 0, this.config.width, this.config.height);
     
     // Находим параметры
-    const maxNumber = Math.max(...sequence);
+    const maxNumber = maxOf(sequence);
     const xMax = Math.ceil(maxNumber / 5) * 5;
     const { min, max } = getDifferenceRange([sequence], xMax);
     
