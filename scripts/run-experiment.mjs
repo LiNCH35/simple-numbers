@@ -17,6 +17,7 @@ function log(message) {
 
 const quick = process.argv.includes('--quick');
 const calibrated = process.argv.includes('--calibrated');
+const long = process.argv.includes('--long');
 
 const smokeMatrix = [
   { id: 'smoke-jump', mode: 'jump', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 },
@@ -49,7 +50,20 @@ const calMatrix = [
   { id: 'cal-step-s4-1e-10-300k', mode: 'step', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true }
 ];
 
-const matrix = quick ? smokeMatrix : calibrated ? calMatrix : fullMatrix;
+const longMatrix = [
+  { id: 'cal-jump-s1-1e-10-2M', mode: 'jump', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-jump-s2-1e-10-2M', mode: 'jump', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-jump-s3-1e-10-2M', mode: 'jump', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-jump-s4-1e-10-2M', mode: 'jump', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-jump-s5-1e-10-2M', mode: 'jump', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-step-s1-1e-10-2M', mode: 'step', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-step-s2-1e-10-2M', mode: 'step', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-step-s3-1e-10-2M', mode: 'step', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-step-s4-1e-10-2M', mode: 'step', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
+  { id: 'cal-step-s5-1e-10-2M', mode: 'step', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true }
+];
+
+const matrix = quick ? smokeMatrix : long ? longMatrix : calibrated ? calMatrix : fullMatrix;
 
 const PREMIUM_SKIP_MS = 15 * 60 * 1000;
 const CHUNK = quick ? 500 : 50000;
