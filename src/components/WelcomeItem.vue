@@ -161,16 +161,18 @@ import { useProbability } from '../composables/useProbability';
 import { useSequenceGeneration } from '../composables/useSequenceGeneration';
 import { useChartManagement } from '../composables/useChartManagement';
 import { useExperimentAnalysis } from '../composables/useExperimentAnalysis';
+import { usePersistentRef } from '../composables/usePersistentRef';
 import { ChartRenderer } from '../utils/chartRenderer';
 
 const initialValue = [2, 3];
 const myListOfSimple = ref<number[]>(initialValue);
 const currentNumber = ref(initialValue[initialValue.length - 1] + 1);
-const logs = ref(false);
-const calibrated = ref(false);
-const maxSimples = ref(25);
-const tolerance = ref(1e-9);
-const sequenceCount = ref(3);
+const logs = usePersistentRef<boolean>('logs', false);
+const calibrated = usePersistentRef<boolean>('calibrated', false);
+const maxSimples = usePersistentRef<number>('maxSimples', 25);
+const tolerance = usePersistentRef<number>('tolerance', 1e-9);
+const sequenceCount = usePersistentRef<number>('sequenceCount', 3);
+const isGenerating = ref(false);
 
 // Probability composable
 const {
@@ -182,7 +184,7 @@ const {
   calculateProbability,
   addProbabilityContributions,
   resetProbabilityCache
-} = useProbability(myListOfSimple, tolerance, logs);
+} = useProbability(myListOfSimple, tolerance, logs, isGenerating);
 
 // Sequence generation composable
 const {
@@ -190,7 +192,6 @@ const {
   generationStartTime,
   generationTime,
   generationProgress,
-  isGenerating,
   progressMode,
   progressCurrent,
   progressTotal,
@@ -206,7 +207,8 @@ const {
   calculateProbability,
   logs,
   initialValue,
-  calibrated
+  calibrated,
+  isGenerating
 );
 
 // Chart management composable

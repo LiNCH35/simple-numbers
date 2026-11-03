@@ -124,17 +124,17 @@ export class ChartRenderer {
     
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = 2;
-    
+    ctx.lineWidth = 1.5;
+
     const differences = calculateSequenceDifferences(sequence, xMax);
-    
+
     differences.forEach((point, index) => {
       const xPos = config.padding + (point.x / xMax) * chartWidth;
       const yPos = config.height - config.padding - ((point.difference - minY) / (maxY - minY)) * chartHeight;
-      
+
       // Рисуем точку
       ctx.beginPath();
-      ctx.arc(xPos, yPos, 3, 0, 2 * Math.PI);
+      ctx.arc(xPos, yPos, 2, 0, 2 * Math.PI);
       ctx.fill();
       
       // Рисуем линию к следующей точке
@@ -189,15 +189,15 @@ export class ChartRenderer {
     
     this.ctx.strokeStyle = this.colors[0];
     this.ctx.fillStyle = this.colors[0];
-    this.ctx.lineWidth = 2;
-    
+    this.ctx.lineWidth = 1.5;
+
     averageDifferences.forEach((point, index) => {
       const x = this.config.padding + (point.x / xMax) * chartWidth;
       const y = this.config.height - this.config.padding - ((point.averageDifference - minY) / (maxY - minY)) * chartHeight;
-      
+
       // Рисуем точку
       this.ctx.beginPath();
-      this.ctx.arc(x, y, 4, 0, 2 * Math.PI);
+      this.ctx.arc(x, y, 2, 0, 2 * Math.PI);
       this.ctx.fill();
       
       // Рисуем линию к следующей точке
@@ -225,17 +225,17 @@ export class ChartRenderer {
     
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = 2;
-    
+    ctx.lineWidth = 1.5;
+
     const differences = calculateSequenceDifferences(sequence, xMax);
-    
+
     differences.forEach((point, index) => {
       const xPos = config.padding + (point.x / xMax) * chartWidth;
       const yPos = config.height - config.padding - ((point.difference - min) / (max - min)) * chartHeight;
-      
+
       // Рисуем точку
       ctx.beginPath();
-      ctx.arc(xPos, yPos, 3, 0, 2 * Math.PI);
+      ctx.arc(xPos, yPos, 2, 0, 2 * Math.PI);
       ctx.fill();
       
       // Рисуем линию к следующей точке
@@ -401,7 +401,7 @@ export class ChartRenderer {
     if (points.length === 0) return;
     const { ctx } = this;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     points.forEach((p, i) => {
       const x = this.px(p.x, xMax);

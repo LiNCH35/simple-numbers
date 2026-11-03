@@ -10,13 +10,13 @@ export function useSequenceGeneration(
   calculateProbability: any,
   logs: any,
   initialValue: number[],
-  calibrated: any
+  calibrated: any,
+  isGenerating: any
 ) {
   const result = ref<[number, number][][]>([]);
   const generationStartTime = ref<number>(0);
   const generationTime = ref<number>(0);
   const generationProgress = ref<number>(0);
-  const isGenerating = ref<boolean>(false);
   const progressMode = ref<string>('single');
   const progressCurrent = ref<number>(0);
   const progressTotal = ref<number>(0);
