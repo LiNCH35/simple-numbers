@@ -1,63 +1,76 @@
-import { isRealPrime } from '../data/primeNumbers';
+import { primeCountPrefix } from '../core/sequence.mjs';
+import { maxOf, minOf } from '../utils/arrayStats';
 import { initGPU } from './useGPU';
 
 export async function calculateSequenceDifferencesGPU(sequence: number[]): Promise<{x: number, difference: number}[]> {
-  const gpu = await initGPU();
-  if (!gpu) {
+  try {
+    const gpu = await initGPU();
+    if (!gpu) {
+      return calculateSequenceDifferencesCPU(sequence);
+    }
+
+    const maxNumber = maxOf(sequence);
+    const xStep = 5;
+    const xMax = Math.ceil(maxNumber / xStep) * xStep;
+    const xValues = Array.from({length: Math.floor(xMax / xStep) + 1}, (_, i) => i * xStep);
+    const sortedSequence = Float32Array.from([...sequence].sort((a, b) => a - b));
+    const maxSteps = Math.ceil(Math.log2(Math.max(2, sequence.length))) + 1;
+
+    const countPseudoKernel = gpu.createKernel(function(sortedSequence: number[], x: number) {
+      let low = 0;
+      let high = this.constants.sequenceLength;
+      for (let step = 0; step < this.constants.maxSteps; step++) {
+        if (low >= high) {
+          break;
+        }
+        const mid = Math.floor((low + high) / 2);
+        if (sortedSequence[mid] <= x) {
+          low = mid + 1;
+        } else {
+          high = mid;
+        }
+      }
+      return low;
+    }).setConstants({ sequenceLength: sequence.length, maxSteps }).setOutput([xValues.length]);
+
+    const realPrimeCounts = primeCountPrefix(xMax);
+
+    const pseudoCounts = countPseudoKernel(sortedSequence, xValues) as Float32Array;
+
+    const differences: {x: number, difference: number}[] = [];
+    for (let i = 0; i < xValues.length; i++) {
+      const x = xValues[i];
+      const pseudoCount = pseudoCounts[i];
+      const realCount = realPrimeCounts[Math.floor(x)];
+      differences.push({ x, difference: pseudoCount - realCount });
+    }
+
+    if (differences.some(point => !Number.isFinite(point.difference))) {
+      return calculateSequenceDifferencesCPU(sequence);
+    }
+    return differences;
+  } catch (e) {
+    console.warn('GPU sequence differences failed, using CPU fallback:', e);
     return calculateSequenceDifferencesCPU(sequence);
   }
-
-  const maxNumber = Math.max(...sequence);
-  const xStep = 5;
-  const xMax = Math.ceil(maxNumber / xStep) * xStep;
-  const xValues = Array.from({length: Math.floor(xMax / xStep) + 1}, (_, i) => i * xStep);
-
-  const countPseudoKernel = gpu.createKernel(function(sequence: number[], x: number) {
-    let count = 0;
-    for (let i = 0; i < this.constants.sequenceLength; i++) {
-      if (sequence[i] <= x) {
-        count++;
-      }
-    }
-    return count;
-  }).setConstants({ sequenceLength: sequence.length }).setOutput([xValues.length]);
-
-  const realPrimeCounts = new Float32Array(xMax + 1);
-  let realPrimeCount = 0;
-  for (let i = 0; i <= xMax; i++) {
-    if (isRealPrime(i)) {
-      realPrimeCount++;
-    }
-    realPrimeCounts[i] = realPrimeCount;
-  }
-
-  const pseudoCounts = countPseudoKernel(sequence, xValues) as Float32Array;
-
-  const differences: {x: number, difference: number}[] = [];
-  for (let i = 0; i < xValues.length; i++) {
-    const x = xValues[i];
-    const pseudoCount = pseudoCounts[i];
-    const realCount = realPrimeCounts[Math.floor(x)];
-    differences.push({ x, difference: pseudoCount - realCount });
-  }
-
-  return differences;
 }
 
 export function calculateSequenceDifferencesCPU(sequence: number[]): {x: number, difference: number}[] {
-  const maxNumber = Math.max(...sequence);
+  const maxNumber = maxOf(sequence);
   const xStep = 5;
   const xMax = Math.ceil(maxNumber / xStep) * xStep;
+  const realPrimeCounts = primeCountPrefix(Math.max(0, xMax));
+  const sorted = [...sequence].sort((a, b) => a - b);
   const differences: {x: number, difference: number}[] = [];
-  
+  let pseudoIndex = 0;
+
   for (let x = 0; x <= xMax; x += xStep) {
-    const pseudoCount = sequence.filter(num => num <= x).length;
-    const realCount = Array.from({length: x + 1}, (_, i) => i).filter(isRealPrime).length;
-    const difference = pseudoCount - realCount;
-    
-    differences.push({x, difference});
+    while (pseudoIndex < sorted.length && sorted[pseudoIndex] <= x) {
+      pseudoIndex++;
+    }
+    differences.push({x, difference: pseudoIndex - realPrimeCounts[x]});
   }
-  
+
   return differences;
 }
 
@@ -66,108 +79,107 @@ export async function calculateSequenceDifferences(sequence: number[]): Promise<
 }
 
 export async function calculateAverageDifferencesGPU(sequences: number[][]): Promise<{x: number, averageDifference: number}[]> {
-  const gpu = await initGPU();
-  if (!gpu) {
+  try {
+    const gpu = await initGPU();
+    if (!gpu) {
+      return calculateAverageDifferencesCPU(sequences);
+    }
+
+    if (sequences.length === 0) return [];
+
+    const minNumbers = sequences.map(sequence => maxOf(sequence));
+    const maxOfMins = minOf(minNumbers);
+
+    const xStep = 5;
+    const xMax = Math.ceil(maxOfMins / xStep) * xStep;
+    const xValues = Float32Array.from({length: Math.floor(xMax / xStep) + 1}, (_, i) => i * xStep);
+
+    const maxSeqLength = maxOf(sequences.map(s => s.length));
+    const sortedFlat = new Float32Array(sequences.length * maxSeqLength);
+    const seqLengths = new Float32Array(sequences.length);
+    for (let i = 0; i < sequences.length; i++) {
+      const sorted = [...sequences[i]].sort((a, b) => a - b);
+      seqLengths[i] = sorted.length;
+      for (let j = 0; j < sorted.length; j++) {
+        sortedFlat[i * maxSeqLength + j] = sorted[j];
+      }
+      for (let j = sorted.length; j < maxSeqLength; j++) {
+        sortedFlat[i * maxSeqLength + j] = Infinity;
+      }
+    }
+    const maxSteps = Math.ceil(Math.log2(Math.max(2, maxSeqLength))) + 1;
+
+    const realPrimeCounts = primeCountPrefix(xMax);
+    const realPrimeCountsInput = Float32Array.from(realPrimeCounts);
+
+    const averageKernel = gpu.createKernel(function(sortedSequences: number[], seqLengths: number[], xValues: number[], realPrimeCounts: number[]) {
+      const seqCount = this.constants.sequenceCount;
+      const maxSeqLength = this.constants.maxSeqLength;
+      const maxSteps = this.constants.maxSteps;
+      const x = xValues[this.thread.x];
+      let sum = 0;
+      for (let s = 0; s < seqCount; s++) {
+        const base = s * maxSeqLength;
+        let low = 0;
+        let high = seqLengths[s];
+        for (let step = 0; step < maxSteps; step++) {
+          if (low >= high) {
+            break;
+          }
+          const mid = Math.floor((low + high) / 2);
+          if (sortedSequences[base + mid] <= x) {
+            low = mid + 1;
+          } else {
+            high = mid;
+          }
+        }
+        sum += low - realPrimeCounts[Math.floor(x)];
+      }
+      return sum / seqCount;
+    }).setConstants({ sequenceCount: sequences.length, maxSeqLength, maxSteps }).setOutput([xValues.length]);
+
+    const averages = averageKernel(sortedFlat, seqLengths, xValues, realPrimeCountsInput) as Float32Array;
+
+    const result: {x: number, averageDifference: number}[] = [];
+    for (let i = 0; i < xValues.length; i++) {
+      result.push({ x: xValues[i], averageDifference: averages[i] });
+    }
+
+    if (result.some(point => !Number.isFinite(point.averageDifference))) {
+      return calculateAverageDifferencesCPU(sequences);
+    }
+    return result;
+  } catch (e) {
+    console.warn('GPU average differences failed, using CPU fallback:', e);
     return calculateAverageDifferencesCPU(sequences);
   }
-
-  if (sequences.length === 0) return [];
-
-  const minNumbers = sequences.map(sequence => Math.max(...sequence));
-  const maxOfMins = Math.min(...minNumbers);
-
-  const xStep = 5;
-  const xMax = Math.ceil(maxOfMins / xStep) * xStep;
-  const xValues = Array.from({length: Math.floor(xMax / xStep) + 1}, (_, i) => i * xStep);
-
-  const maxSeqLength = Math.max(...sequences.map(s => s.length));
-  const flattenedSequences = new Float32Array(sequences.length * maxSeqLength);
-  for (let i = 0; i < sequences.length; i++) {
-    for (let j = 0; j < sequences[i].length; j++) {
-      flattenedSequences[i * maxSeqLength + j] = sequences[i][j];
-    }
-    for (let j = sequences[i].length; j < maxSeqLength; j++) {
-      flattenedSequences[i * maxSeqLength + j] = -1;
-    }
-  }
-
-  const realPrimeCounts = new Float32Array(xMax + 1);
-  let realPrimeCount = 0;
-  for (let i = 0; i <= xMax; i++) {
-    if (isRealPrime(i)) {
-      realPrimeCount++;
-    }
-    realPrimeCounts[i] = realPrimeCount;
-  }
-
-  const countAllPseudoKernel = gpu.createKernel(function(sequences: number[], x: number, maxSeqLength: number) {
-    const seqCount = this.constants.sequenceCount;
-    const counts = new Float32Array(seqCount);
-    
-    for (let s = 0; s < seqCount; s++) {
-      let count = 0;
-      for (let i = 0; i < maxSeqLength; i++) {
-        const val = sequences[s * maxSeqLength + i];
-        if (val >= 0 && val <= x) {
-          count++;
-        }
-      }
-      counts[s] = count;
-    }
-    
-    return counts;
-  }).setConstants({ sequenceCount: sequences.length }).setOutput([xValues.length]);
-
-  const allPseudoCounts = countAllPseudoKernel(flattenedSequences, xValues, maxSeqLength) as Float32Array[];
-
-  const result: {x: number, averageDifference: number}[] = [];
-  for (let i = 0; i < xValues.length; i++) {
-    const x = xValues[i];
-    const realCount = realPrimeCounts[Math.floor(x)];
-    
-    let sumDifferences = 0;
-    for (let s = 0; s < sequences.length; s++) {
-      const pseudoCount = (allPseudoCounts as any)[i * sequences.length + s];
-      sumDifferences += pseudoCount - realCount;
-    }
-    
-    result.push({
-      x,
-      averageDifference: sumDifferences / sequences.length
-    });
-  }
-
-  return result;
 }
 
 export function calculateAverageDifferencesCPU(sequences: number[][]): {x: number, averageDifference: number}[] {
   if (sequences.length === 0) return [];
-  
-  const minNumbers = sequences.map(sequence => Math.max(...sequence));
-  const maxOfMins = Math.min(...minNumbers);
-  
+
+  const minNumbers = sequences.map(sequence => maxOf(sequence));
+  const maxOfMins = minOf(minNumbers);
+
   const xStep = 5;
   const xMax = Math.ceil(maxOfMins / xStep) * xStep;
-  const points: {x: number, differences: number[]}[] = [];
-  
+  const realPrimeCounts = primeCountPrefix(Math.max(0, xMax));
+  const sortedSequences = sequences.map(sequence => [...sequence].sort((a, b) => a - b));
+  const cursors = sortedSequences.map(() => 0);
+  const result: {x: number, averageDifference: number}[] = [];
+
   for (let x = 0; x <= xMax; x += xStep) {
-    const differences: number[] = [];
-    
-    sequences.forEach(sequence => {
-      const pseudoCount = sequence.filter(num => num <= x).length;
-      const realCount = Array.from({length: x + 1}, (_, i) => i).filter(isRealPrime).length;
-      const difference = pseudoCount - realCount;
-      differences.push(difference);
-    });
-    
-    points.push({x, differences});
+    let sumDifferences = 0;
+    for (let s = 0; s < sortedSequences.length; s++) {
+      const sorted = sortedSequences[s];
+      while (cursors[s] < sorted.length && sorted[cursors[s]] <= x) {
+        cursors[s]++;
+      }
+      sumDifferences += cursors[s] - realPrimeCounts[x];
+    }
+    result.push({x, averageDifference: sumDifferences / sortedSequences.length});
   }
-  
-  const result = points.map(point => ({
-    x: point.x,
-    averageDifference: point.differences.reduce((sum, diff) => sum + diff, 0) / point.differences.length
-  }));
-  
+
   return result;
 }
 

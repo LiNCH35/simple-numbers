@@ -1,11 +1,14 @@
-import { ref, computed, watch } from 'vue';
+import { ref, watch } from 'vue';
+import { ProbabilityCalculator } from '../core/probability.mjs';
 
-export function useProbability(myListOfSimple: any, sensitivity: any, logs: any) {
-  const probabilityCache = ref<Map<string, number>>(new Map());
+export function useProbability(myListOfSimple: any, tolerance: any, logs: any) {
+  const combinationCount = ref(0);
+  const skippedCount = ref(0);
+  const truncatedAdds = ref(0);
   const currentProbabilitySum = ref(0);
   const currentProbability = ref(0.5);
 
-  const length = computed(() => myListOfSimple.value.length);
+  let calculator: any = null;
 
   function myLog(...args: any[]) {
     if (logs.value) {
@@ -13,121 +16,72 @@ export function useProbability(myListOfSimple: any, sensitivity: any, logs: any)
     }
   }
 
+  function readTolerance() {
+    const value = Number(tolerance.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error('tolerance must be a positive finite number');
+    }
+    return value;
+  }
+
+  function syncFromCalculator() {
+    currentProbabilitySum.value = calculator.sum;
+    currentProbability.value = calculator.probability;
+    combinationCount.value = calculator.combinations;
+    skippedCount.value = calculator.skipped;
+    myLog({
+      combinations: calculator.combinations,
+      skipped: calculator.skipped,
+      probabilitySum: calculator.sum,
+      probability: calculator.probability
+    });
+  }
+
+  function rebuildCalculator(base: number[]) {
+    truncatedAdds.value = 0;
+    calculator = new ProbabilityCalculator(Infinity, readTolerance());
+    for (const number of base) {
+      calculator.addPrime(number);
+    }
+    syncFromCalculator();
+  }
+
   function calculateProbability() {
-    currentProbabilitySum.value = getProbabilityFromCache();
-    currentProbability.value = 1 - currentProbabilitySum.value;
-  }
-
-  function getProbabilityFromCache() {
-    if (length.value === 0) return 0;
-    
-    if (probabilityCache.value.size === 0) {
-      initializeProbabilityCache();
-    }
-    
-    return currentProbabilitySum.value;
-  }
-
-  function initializeProbabilityCache() {
-    probabilityCache.value.clear();
-    currentProbabilitySum.value = 0;
-    
-    for (let i = 1; i < Math.pow(2, length.value); i++) {
-      const count = i.toString(2).split('1').length - 1;
-      if (count > sensitivity.value) {
-        continue;
-      }
-      
-      const combination = getCombinationFromBits(i);
-      const product = getProductForCombination(combination);
-      const sign = combination.length % 2 === 1 ? 1 : -1;
-      const contribution = sign / product;
-      
-      probabilityCache.value.set(combination.join(','), contribution);
-      currentProbabilitySum.value += contribution;
-      
-      myLog({ combination, product, sign, contribution });
-    }
+    rebuildCalculator(myListOfSimple.value);
+    return currentProbability.value;
   }
 
   function addProbabilityContributions(newPrime: number) {
-    const newCombinations: string[] = [];
-    const newContributions: number[] = [];
-    
-    for (let i = 1; i < Math.pow(2, length.value - 1); i++) {
-      const count = i.toString(2).split('1').length - 1;
-      if (count > sensitivity.value - 1) {
-        continue;
-      }
-      
-      const existingCombination = getCombinationFromBits(i);
-      const newCombination = [...existingCombination, newPrime];
-      
-      if (newCombination.length > sensitivity.value) {
-        continue;
-      }
-      
-      const product = getProductForCombination(newCombination);
-      const sign = newCombination.length % 2 === 1 ? 1 : -1;
-      const contribution = sign / product;
-      
-      const key = newCombination.join(',');
-      newCombinations.push(key);
-      newContributions.push(contribution);
-      
-      probabilityCache.value.set(key, contribution);
-      currentProbabilitySum.value += contribution;
-      
-      myLog({ newCombination, product, sign, contribution });
+    const expectedBaseLength = myListOfSimple.value.length - 1;
+    if (!calculator || calculator.primes.length !== expectedBaseLength) {
+      rebuildCalculator(myListOfSimple.value.slice(0, expectedBaseLength));
     }
-    
-    if (sensitivity.value >= 1) {
-      const singleKey = newPrime.toString();
-      const singleContribution = 1 / newPrime;
-      
-      if (!probabilityCache.value.has(singleKey)) {
-        probabilityCache.value.set(singleKey, singleContribution);
-        currentProbabilitySum.value += singleContribution;
-        newCombinations.push(singleKey);
-        newContributions.push(singleContribution);
-        
-        myLog({ singleCombination: [newPrime], product: newPrime, sign: 1, contribution: singleContribution });
-      }
+    calculator.addPrime(newPrime);
+    if (calculator.lastAddTruncated) {
+      truncatedAdds.value++;
     }
-    
-    return { newCombinations, newContributions };
-  }
-
-  function getCombinationFromBits(bits: number): number[] {
-    const combination: number[] = [];
-    for (let n = 0; n < length.value; n++) {
-      if (bits & (1 << n)) {
-        combination.push(myListOfSimple.value[n]);
-      }
-    }
-    return combination;
-  }
-
-  function getProductForCombination(combination: number[]): number {
-    let product = 1;
-    for (const num of combination) {
-      product *= num;
-    }
-    return product;
+    syncFromCalculator();
+    return { newCombinations: [], newContributions: [] };
   }
 
   function resetProbabilityCache() {
-    probabilityCache.value.clear();
+    calculator = null;
     currentProbabilitySum.value = 0;
   }
 
-  watch(sensitivity, () => {
+  function initializeProbabilityCache() {
+    calculateProbability();
+  }
+
+  watch(tolerance, () => {
     resetProbabilityCache();
     calculateProbability();
   });
 
   return {
-    probabilityCache,
+    combinationCount,
+    skippedCount,
+    truncatedAdds,
     currentProbabilitySum,
     currentProbability,
     calculateProbability,
