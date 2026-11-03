@@ -25,6 +25,8 @@ Options:
   --seed <n>                PRNG seed, output is reproducible per seed (default 42)
   --initial <a,b,...>       Initial primes, must be integers >= 2 (default "2,3")
   --mode <jump|step>        jump = random gap in [min, min + 1/P], step = +1 per candidate (default jump)
+  --calibrated              Cramér calibration: step accepts with 1/ln(x), jump draws exponential gaps with mean ln(x)
+  --track-probability       Only with --calibrated: keep feeding pseudo-numbers into the probability sum (slow)
   --numbers <a,b,...>       probability command only: explicit number set (skips generation)
   --step <n>                diff command only: x-step for the difference table (default 5)
   --format <text|json|csv>  Output format (default text)
@@ -37,6 +39,7 @@ Examples:
   npm run cli -- probability --numbers 2,3,5,7,11
   npm run cli -- probability --numbers 2,3,5,7,11 --sensitivity 3 --format json
   npm run cli -- diff --count 100 --seed 1 --step 5
+  npm run cli -- generate --count 200 --calibrated --seed 7
   npm run cli -- bench --count 500 --seed 7
 `;
 
@@ -102,6 +105,9 @@ function readGeneratorOptions(args) {
         : 5e8,
     initial: args.initial !== undefined ? toNumberList(args.initial, '--initial') : [2, 3],
     mode: args.mode !== undefined ? String(args.mode) : 'jump',
+    calibrated: args.calibrated !== undefined,
+    trackProbability:
+      args.calibrated !== undefined ? args['track-probability'] !== undefined : true,
     count: args.count !== undefined ? toInt(args.count, '--count', 1) : 20
   };
 }
@@ -161,6 +167,7 @@ function commandGenerate(args) {
     sensitivity: options.sensitivity === Infinity ? null : options.sensitivity,
     seed: options.seed,
     mode: options.mode,
+    calibrated: options.calibrated,
     initial: options.initial,
     probability: result.probability,
     probabilitySum: result.probabilitySum,
@@ -177,7 +184,8 @@ function commandGenerate(args) {
       console.log(
         `generate  count=${options.count}  tolerance=${options.tolerance}  ` +
           `sensitivity=${formatSensitivity(options.sensitivity)}  ` +
-          `seed=${options.seed}  mode=${options.mode}  initial=[${options.initial.join(',')}]`
+          `seed=${options.seed}  mode=${options.mode}  initial=[${options.initial.join(',')}]` +
+          (options.calibrated ? '  calibrated' : '')
       );
       console.log(
         `probability=${result.probability.toPrecision(6)}  ` +

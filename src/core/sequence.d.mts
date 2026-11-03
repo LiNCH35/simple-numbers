@@ -34,4 +34,6 @@ export declare function createGenerator(options?: {
   maxCombinations?: number;
   initial?: number[];
   mode?: 'jump' | 'step';
+  calibrated?: boolean;
+  trackProbability?: boolean;
 }): Generator;

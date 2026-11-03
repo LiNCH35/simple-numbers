@@ -312,7 +312,7 @@ for (const [key, g] of built) {
 const comparisons = [];
 const byShape = new Map();
 for (const [key, g] of built) {
-  const m = /^(\w+)-n(\d+)-tol(.+)-xs(\d+)$/.exec(key);
+  const m = /^([a-z-]+)-n(\d+)-tol(.+)-xs(\d+)$/.exec(key);
   if (!m) continue;
   const shape = `n${m[2]}-tol${m[3]}-xs${m[4]}`;
   if (!byShape.has(shape)) byShape.set(shape, []);

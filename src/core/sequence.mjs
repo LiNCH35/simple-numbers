@@ -64,7 +64,9 @@ export function createGenerator(options = {}) {
     tolerance = 1e-12,
     maxCombinations = Infinity,
     initial = [2, 3],
-    mode = 'jump'
+    mode = 'jump',
+    calibrated = false,
+    trackProbability = true
   } = options;
 
   if (mode !== 'jump' && mode !== 'step') {
@@ -82,6 +84,12 @@ export function createGenerator(options = {}) {
   if (!Number.isFinite(tolerance) || tolerance <= 0) {
     throw new Error(`tolerance must be a positive finite number, got: ${tolerance}`);
   }
+  if (typeof calibrated !== 'boolean') {
+    throw new Error(`calibrated must be a boolean, got: ${calibrated}`);
+  }
+  if (typeof trackProbability !== 'boolean') {
+    throw new Error(`trackProbability must be a boolean, got: ${trackProbability}`);
+  }
 
   const initialList = initial.slice();
   const random = mulberry32(seed);
@@ -89,25 +97,31 @@ export function createGenerator(options = {}) {
   const sequence = initialList.slice();
 
   for (const prime of initialList) {
-    calculator.addPrime(prime);
+    if (trackProbability) calculator.addPrime(prime);
   }
 
   let currentNumber = initialList[initialList.length - 1] + 1;
 
   const acceptNumber = (number) => {
     sequence.push(number);
-    calculator.addPrime(number);
+    if (trackProbability) calculator.addPrime(number);
   };
 
   const nextJump = () => {
-    const min = currentNumber + 1;
-    const max = min + 1 / Math.max(calculator.probability, Number.EPSILON);
-    currentNumber = Math.floor(random() * (max - min)) + min;
+    if (calibrated) {
+      currentNumber += Math.max(1, Math.round(-Math.log(1 - random()) * Math.log(currentNumber)));
+    } else {
+      const min = currentNumber + 1;
+      const max = min + 1 / Math.max(calculator.probability, Number.EPSILON);
+      currentNumber = Math.floor(random() * (max - min)) + min;
+    }
     acceptNumber(currentNumber);
   };
 
   const nextStep = () => {
-    const accepted = random() <= calculator.probability;
+    const accepted = calibrated
+      ? random() < 1 / Math.log(currentNumber)
+      : random() <= calculator.probability;
     if (accepted) {
       acceptNumber(currentNumber);
     }

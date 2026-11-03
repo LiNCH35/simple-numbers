@@ -16,25 +16,40 @@ function log(message) {
 }
 
 const quick = process.argv.includes('--quick');
+const calibrated = process.argv.includes('--calibrated');
 
-const matrix = quick
-  ? [
-      { id: 'smoke-jump', mode: 'jump', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 },
-      { id: 'smoke-step', mode: 'step', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 }
-    ]
-  : [
-      { id: 'anchor-jump-s42-1e-10-100k', mode: 'jump', seed: 42, tolerance: 1e-10, count: 100000, maxCombinations: 5e10, xStep: 5 },
-      { id: 'jump-s1-1e-10-300k', mode: 'jump', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'jump-s2-1e-10-300k', mode: 'jump', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'jump-s3-1e-10-300k', mode: 'jump', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'jump-s4-1e-10-300k', mode: 'jump', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'step-s1-1e-10-300k', mode: 'step', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'step-s2-1e-10-300k', mode: 'step', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'step-s3-1e-10-300k', mode: 'step', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'step-s4-1e-10-300k', mode: 'step', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-      { id: 'premium-jump-s1-1e-11-50k', mode: 'jump', seed: 1, tolerance: 1e-11, count: 50000, maxCombinations: 2e11, xStep: 5, premium: true },
-      { id: 'premium-step-s2-1e-11-50k', mode: 'step', seed: 2, tolerance: 1e-11, count: 50000, maxCombinations: 2e11, xStep: 5, premium: true }
-    ];
+const smokeMatrix = [
+  { id: 'smoke-jump', mode: 'jump', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 },
+  { id: 'smoke-step', mode: 'step', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 }
+];
+
+const fullMatrix = [
+  { id: 'anchor-jump-s42-1e-10-100k', mode: 'jump', seed: 42, tolerance: 1e-10, count: 100000, maxCombinations: 5e10, xStep: 5 },
+  { id: 'jump-s1-1e-10-300k', mode: 'jump', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'jump-s2-1e-10-300k', mode: 'jump', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'jump-s3-1e-10-300k', mode: 'jump', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'jump-s4-1e-10-300k', mode: 'jump', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'step-s1-1e-10-300k', mode: 'step', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'step-s2-1e-10-300k', mode: 'step', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'step-s3-1e-10-300k', mode: 'step', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'step-s4-1e-10-300k', mode: 'step', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
+  { id: 'premium-jump-s1-1e-11-50k', mode: 'jump', seed: 1, tolerance: 1e-11, count: 50000, maxCombinations: 2e11, xStep: 5, premium: true },
+  { id: 'premium-step-s2-1e-11-50k', mode: 'step', seed: 2, tolerance: 1e-11, count: 50000, maxCombinations: 2e11, xStep: 5, premium: true }
+];
+
+const calMatrix = [
+  { id: 'anchor-cal-jump-s42-1e-10-100k', mode: 'jump', seed: 42, tolerance: 1e-10, count: 100000, maxCombinations: 5e10, xStep: 5, calibrated: true },
+  { id: 'cal-jump-s1-1e-10-300k', mode: 'jump', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-jump-s2-1e-10-300k', mode: 'jump', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-jump-s3-1e-10-300k', mode: 'jump', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-jump-s4-1e-10-300k', mode: 'jump', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-step-s1-1e-10-300k', mode: 'step', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-step-s2-1e-10-300k', mode: 'step', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-step-s3-1e-10-300k', mode: 'step', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
+  { id: 'cal-step-s4-1e-10-300k', mode: 'step', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true }
+];
+
+const matrix = quick ? smokeMatrix : calibrated ? calMatrix : fullMatrix;
 
 const PREMIUM_SKIP_MS = 15 * 60 * 1000;
 const CHUNK = quick ? 500 : 50000;
@@ -61,7 +76,7 @@ for (const run of matrix) {
   }
   log(
     `START ${run.id}: mode=${run.mode} seed=${run.seed} tolerance=${run.tolerance} ` +
-      `count=${run.count} maxCombinations=${run.maxCombinations}`
+      `count=${run.count} maxCombinations=${run.maxCombinations} calibrated=${run.calibrated === true}`
   );
   const startedAt = Date.now();
   try {
@@ -69,7 +84,9 @@ for (const run of matrix) {
       seed: run.seed,
       tolerance: run.tolerance,
       maxCombinations: run.maxCombinations,
-      mode: run.mode
+      mode: run.mode,
+      calibrated: run.calibrated === true,
+      trackProbability: run.calibrated !== true
     });
     let truncatedAdds = 0;
     let stats = null;
@@ -90,7 +107,8 @@ for (const run of matrix) {
     const realPrimes = countPrimesUpTo(xMax);
     const payload = {
       id: run.id,
-      mode: run.mode,
+      mode: run.calibrated ? `cal-${run.mode}` : run.mode,
+      calibrated: run.calibrated === true,
       seed: run.seed,
       tolerance: run.tolerance,
       maxCombinations: run.maxCombinations,
