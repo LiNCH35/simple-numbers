@@ -290,6 +290,50 @@ select {
   background: #b9b9b2;
 }
 
+.gap-section {
+  margin-top: 2rem;
+}
+
+.gap-section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6f6f6a;
+}
+
+.gap-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: #6f6f6a;
+  font-variant-numeric: tabular-nums;
+}
+
+.gap-section canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #e4e4e0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.experiment-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.experiment-options .check-label {
+  justify-content: flex-start;
+}
+
 .experiment-section {
   margin-top: 2rem;
 }

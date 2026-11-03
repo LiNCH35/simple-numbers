@@ -19,6 +19,16 @@ export interface ExperimentCurve {
   points: ExperimentCurvePoint[];
 }
 
+export interface OverlayPoint {
+  x: number;
+  value: number;
+}
+
+export interface ExperimentOverlays {
+  liDiff: OverlayPoint[] | null;
+  sqrtPi: OverlayPoint[] | null;
+}
+
 function niceStep(range: number, targetTicks: number): number {
   const raw = range / targetTicks;
   if (!Number.isFinite(raw) || raw <= 0) return 1;
@@ -356,6 +366,13 @@ export class ChartRenderer {
     return this.config.padding + (x / xMax) * (this.config.width - 2 * this.config.padding);
   }
 
+  private pxScaled(x: number, xMax: number, logX: boolean, xMin: number): number {
+    if (!logX) return this.px(x, xMax);
+    const lo = Math.log(Math.max(2, xMin));
+    const hi = Math.log(Math.max(3, xMax));
+    return this.config.padding + ((Math.log(Math.max(2, x)) - lo) / (hi - lo || 1)) * (this.config.width - 2 * this.config.padding);
+  }
+
   private py(value: number, minY: number, maxY: number): number {
     const chartHeight = this.config.height - 2 * this.config.padding;
     return this.config.height - this.config.padding - ((value - minY) / (maxY - minY)) * chartHeight;
@@ -374,7 +391,7 @@ export class ChartRenderer {
     ctx.restore();
   }
 
-  private drawConfidenceBand(points: ExperimentCurvePoint[], color: string, xMax: number, minY: number, maxY: number): void {
+  private drawConfidenceBand(points: ExperimentCurvePoint[], color: string, xMax: number, minY: number, maxY: number, logX = false, xMin = 0): void {
     const withStd = points.filter((p): p is ExperimentCurvePoint & { std: number } => p.std !== null);
     if (withStd.length < 2) return;
     const { ctx } = this;
@@ -383,28 +400,28 @@ export class ChartRenderer {
     ctx.fillStyle = color;
     ctx.beginPath();
     withStd.forEach((p, i) => {
-      const x = this.px(p.x, xMax);
+      const x = this.pxScaled(p.x, xMax, logX, xMin);
       const y = this.py(p.avgDiff + p.std, minY, maxY);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     for (let i = withStd.length - 1; i >= 0; i--) {
       const p = withStd[i];
-      ctx.lineTo(this.px(p.x, xMax), this.py(p.avgDiff - p.std, minY, maxY));
+      ctx.lineTo(this.pxScaled(p.x, xMax, logX, xMin), this.py(p.avgDiff - p.std, minY, maxY));
     }
     ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
 
-  private drawCurveLine(points: ExperimentCurvePoint[], color: string, xMax: number, minY: number, maxY: number): void {
+  private drawCurveLine(points: ExperimentCurvePoint[], color: string, xMax: number, minY: number, maxY: number, logX = false, xMin = 0): void {
     if (points.length === 0) return;
     const { ctx } = this;
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     points.forEach((p, i) => {
-      const x = this.px(p.x, xMax);
+      const x = this.pxScaled(p.x, xMax, logX, xMin);
       const y = this.py(p.avgDiff, minY, maxY);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -412,18 +429,62 @@ export class ChartRenderer {
     ctx.stroke();
   }
 
-  private drawCurveLegend(curves: ExperimentCurve[]): void {
+  private drawOverlayLine(points: OverlayPoint[], color: string, xMax: number, minY: number, maxY: number, logX: boolean, xMin: number): void {
+    if (points.length === 0) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      const x = this.pxScaled(p.x, xMax, logX, xMin);
+      const y = this.py(p.value, minY, maxY);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawLegendEntry(label: string, color: string, index: number): void {
     const { ctx, config } = this;
+    const y = config.padding + 10 + index * 18;
+    ctx.fillStyle = color;
+    ctx.fillRect(config.padding + 10, y, 14, 12);
+    ctx.fillStyle = '#333333';
+    ctx.fillText(label, config.padding + 30, y + 10);
+  }
+
+  private drawCurveLegend(curves: ExperimentCurve[]): void {
+    const { ctx } = this;
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'left';
     curves.forEach((curve, i) => {
       const color = this.colors[curve.colorIndex % this.colors.length];
-      const y = config.padding + 10 + i * 18;
-      ctx.fillStyle = color;
-      ctx.fillRect(config.padding + 10, y, 14, 12);
-      ctx.fillStyle = '#333333';
-      ctx.fillText(curve.key, config.padding + 30, y + 10);
+      this.drawLegendEntry(curve.key, color, i);
     });
+  }
+
+  private drawXGridLog(xMin: number, xMax: number): void {
+    const { ctx, config } = this;
+    const lo = Math.log(Math.max(2, xMin));
+    const hi = Math.log(Math.max(3, xMax));
+    ctx.textAlign = 'center';
+    const firstDecade = Math.ceil(lo / Math.LN10);
+    const lastDecade = Math.floor(hi / Math.LN10);
+    for (let d = firstDecade; d <= lastDecade; d++) {
+      const x = Math.pow(10, d);
+      const xPos = config.padding + ((Math.log(x) - lo) / (hi - lo || 1)) * (config.width - 2 * config.padding);
+      ctx.strokeStyle = '#ececea';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xPos, config.padding);
+      ctx.lineTo(xPos, config.height - config.padding);
+      ctx.stroke();
+      ctx.fillStyle = '#8a8a84';
+      ctx.fillText(x < 1e6 ? x.toString() : x.toExponential(0), xPos, config.height - config.padding + 20);
+    }
   }
 
   private drawCurveAxisLabels(): void {
@@ -440,10 +501,14 @@ export class ChartRenderer {
   }
 
   /**
-   * Рисует средние кривые avgDiff по группам эксперимента с полосами ±σ
+   * Рисует средние кривые avgDiff по группам эксперимента с полосами ±σ,
+   * опционально с теоретическими оверлеями (Li(x)−π(x), ±√π(x)) и лог-шкалой x
    */
-  renderExperimentCurves(curves: ExperimentCurve[]): void {
+  renderExperimentCurves(curves: ExperimentCurve[], options: { overlays?: ExperimentOverlays | null; logX?: boolean } = {}): void {
     if (curves.length === 0) return;
+
+    const logX = options.logX === true;
+    const overlays = options.overlays ?? null;
 
     this.ctx.clearRect(0, 0, this.config.width, this.config.height);
 
@@ -452,9 +517,16 @@ export class ChartRenderer {
       values.push(p.std === null ? p.avgDiff : p.avgDiff - p.std);
       values.push(p.std === null ? p.avgDiff : p.avgDiff + p.std);
     }));
+    if (overlays?.liDiff) overlays.liDiff.forEach((p) => values.push(p.value));
+    if (overlays?.sqrtPi) overlays.sqrtPi.forEach((p) => {
+      values.push(p.value);
+      values.push(-p.value);
+    });
     if (values.length === 0) return;
 
-    const xMax = Math.ceil(maxOf(curves.flatMap((c) => c.points.map((p) => p.x))) / 5) * 5;
+    const allX = curves.flatMap((c) => c.points.map((p) => p.x));
+    const xMin = Math.min(...allX);
+    const xMax = Math.ceil(Math.max(...allX) / 5) * 5;
     let minY = minOf(values);
     let maxY = maxOf(values);
     if (minY > 0) minY = 0;
@@ -466,16 +538,97 @@ export class ChartRenderer {
 
     this.drawAxes();
     this.drawYGrid(minY, maxY);
-    this.drawXGrid(xMax);
+    if (logX) this.drawXGridLog(xMin, xMax);
+    else this.drawXGrid(xMax);
     this.drawZeroLine(minY, maxY);
+
+    if (overlays?.sqrtPi && overlays.sqrtPi.length > 0) {
+      this.drawOverlayLine(overlays.sqrtPi, '#b9b9b2', xMax, minY, maxY, logX, xMin);
+      this.drawOverlayLine(overlays.sqrtPi.map((p) => ({ x: p.x, value: -p.value })), '#b9b9b2', xMax, minY, maxY, logX, xMin);
+    }
+    if (overlays?.liDiff && overlays.liDiff.length > 0) {
+      this.drawOverlayLine(overlays.liDiff, '#8a8a84', xMax, minY, maxY, logX, xMin);
+    }
 
     curves.forEach((curve) => {
       const color = this.colors[curve.colorIndex % this.colors.length];
-      this.drawConfidenceBand(curve.points, color, xMax, minY, maxY);
-      this.drawCurveLine(curve.points, color, xMax, minY, maxY);
+      this.drawConfidenceBand(curve.points, color, xMax, minY, maxY, logX, xMin);
+      this.drawCurveLine(curve.points, color, xMax, minY, maxY, logX, xMin);
     });
 
     this.drawCurveLegend(curves);
+    let legendIndex = curves.length;
+    if (overlays?.liDiff && overlays.liDiff.length > 0) {
+      this.drawLegendEntry('Li(x)−π(x)', '#8a8a84', legendIndex++);
+    }
+    if (overlays?.sqrtPi && overlays.sqrtPi.length > 0) {
+      this.drawLegendEntry('±√π(x)', '#b9b9b2', legendIndex++);
+    }
     this.drawCurveAxisLabels();
+  }
+
+  /**
+   * Рисует гистограмму промежутков последовательности (доля в % на бар)
+   */
+  renderGapHistogram(bars: { gap: number; pct: number }[]): void {
+    if (bars.length === 0) return;
+
+    const maxBars = 13;
+    let display = bars;
+    let mergedTail = false;
+    if (bars.length > maxBars) {
+      const head = bars.slice(0, maxBars - 1);
+      const tailPct = bars.slice(maxBars - 1).reduce((sum, bar) => sum + bar.pct, 0);
+      display = [...head, { gap: bars[maxBars - 1].gap, pct: tailPct }];
+      mergedTail = true;
+    }
+
+    this.ctx.clearRect(0, 0, this.config.width, this.config.height);
+    const { ctx, config } = this;
+    const chartWidth = config.width - 2 * config.padding;
+    const chartHeight = config.height - 2 * config.padding;
+    const maxPct = Math.max(...display.map((bar) => bar.pct));
+
+    ctx.strokeStyle = '#1c1c1a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(config.padding, config.padding);
+    ctx.lineTo(config.padding, config.height - config.padding);
+    ctx.lineTo(config.width - config.padding, config.height - config.padding);
+    ctx.stroke();
+
+    ctx.fillStyle = '#8a8a84';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    const ticks = 4;
+    for (let i = 0; i <= ticks; i++) {
+      const v = (maxPct / ticks) * i;
+      const y = config.height - config.padding - (v / maxPct) * chartHeight;
+      ctx.strokeStyle = '#ececea';
+      ctx.beginPath();
+      ctx.moveTo(config.padding, y);
+      ctx.lineTo(config.width - config.padding, y);
+      ctx.stroke();
+      ctx.fillText(`${v.toFixed(0)}%`, config.padding - 10, y + 3);
+    }
+
+    const slot = chartWidth / display.length;
+    display.forEach((bar, i) => {
+      const x0 = config.padding + i * slot + slot * 0.12;
+      const barWidth = slot * 0.76;
+      const barHeight = (bar.pct / maxPct) * chartHeight;
+      ctx.fillStyle = bar.gap === 2 ? '#a3543f' : '#34557d';
+      ctx.fillRect(x0, config.height - config.padding - barHeight, barWidth, barHeight);
+
+      ctx.fillStyle = '#333333';
+      ctx.textAlign = 'center';
+      if (bar.pct >= maxPct * 0.04) {
+        ctx.fillText(`${bar.pct.toFixed(1)}`, x0 + barWidth / 2, config.height - config.padding - barHeight - 4);
+      }
+
+      const label = mergedTail && i === display.length - 1 ? `≥${bar.gap}` : bar.gap.toString();
+      ctx.fillStyle = '#8a8a84';
+      ctx.fillText(label, x0 + barWidth / 2, config.height - config.padding + 20);
+    });
   }
 }

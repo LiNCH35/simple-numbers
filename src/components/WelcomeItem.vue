@@ -17,6 +17,7 @@
           <div class="buttons">
             <button class="primary" @click="getListWrapper">List {{ maxSimples }}</button>
             <button @click="generateMultipleSequences">Generate Multiple</button>
+            <button @click="stopGeneration" :disabled="!isGenerating">Stop</button>
           </div>
 
           <!-- Прогресс бар генерации -->
@@ -39,9 +40,13 @@
                 <option :value="1e-4">1e-4 (fastest)</option>
                 <option :value="1e-6">1e-6 (fast)</option>
                 <option :value="1e-9">1e-9 (default)</option>
+                <option :value="1e-10">1e-10 (precise)</option>
                 <option :value="1e-12">1e-12 (slow)</option>
-                <option :value="1e-15">1e-15 (may be very slow)</option>
               </select>
+            </label>
+            <label>
+              Seed:
+              <input type="number" v-model="seed" min="0" title="splitmix32 seed; multiple sequences use seed, seed+1, ...">
             </label>
             <label>
               Sequences:
@@ -99,6 +104,22 @@
           <p class="empty-state-hint">Generate Multiple runs several sequences, compares them and shows the average.</p>
         </div>
 
+        <div class="gap-section">
+          <h3>Gap Structure<span v-if="gapSubtitle"> — {{ gapSubtitle }}</span></h3>
+          <template v-if="gapAnalysis">
+            <div class="gap-stats">
+              <span>gaps {{ gapAnalysis.gaps }}</span>
+              <span>mean {{ gapAnalysis.meanGap.toFixed(2) }}</span>
+              <span>twinIndex {{ gapAnalysis.twinIndex.toFixed(3) }}</span>
+              <span>gap=2 {{ gapAnalysis.twinPct.toFixed(1) }}%</span>
+              <span>var/mean² {{ gapAnalysis.dispersion.toFixed(2) }}</span>
+              <span>mod6 {{ mod6Shares }}</span>
+            </div>
+            <canvas ref="gapAnalysisCanvas" width="900" height="260"></canvas>
+          </template>
+          <p v-else class="experiment-note">Run List or Generate Multiple to see the gap structure.</p>
+        </div>
+
         <div class="experiment-section">
           <h3>Experiment Analysis — avg diff vs π(x)</h3>
           <p v-if="analysisError" class="experiment-error">
@@ -113,6 +134,16 @@
               <label v-for="group in analysisGroups" :key="group.key" class="check-label">
                 <input type="checkbox" v-model="experimentVisible[group.key]">
                 {{ group.key }}
+              </label>
+            </div>
+            <div class="experiment-options">
+              <label class="check-label">
+                <input type="checkbox" v-model="theoryOverlays">
+                Theory: Li(x)−π(x) / ±√π(x)
+              </label>
+              <label class="check-label">
+                <input type="checkbox" v-model="experimentLogX">
+                log x
               </label>
             </div>
             <div class="experiment-table">
@@ -157,8 +188,9 @@ import { useProbability } from '../composables/useProbability';
 import { useSequenceGeneration } from '../composables/useSequenceGeneration';
 import { useChartManagement } from '../composables/useChartManagement';
 import { useExperimentAnalysis } from '../composables/useExperimentAnalysis';
+import { analyzeGaps, type GapAnalysis } from '../composables/useGapAnalysis';
 import { usePersistentRef } from '../composables/usePersistentRef';
-import { ChartRenderer } from '../utils/chartRenderer';
+import { ChartRenderer, type ExperimentOverlays } from '../utils/chartRenderer';
 
 const initialValue = [2, 3];
 const myListOfSimple = ref<number[]>(initialValue);
@@ -166,7 +198,12 @@ const currentNumber = ref(initialValue[initialValue.length - 1] + 1);
 const logs = usePersistentRef<boolean>('logs', false);
 const maxSimples = usePersistentRef<number>('maxSimples', 25);
 const tolerance = usePersistentRef<number>('tolerance', 1e-9);
+const allowedTolerances = [1e-4, 1e-6, 1e-9, 1e-10, 1e-12];
+if (!allowedTolerances.includes(Number(tolerance.value))) {
+  tolerance.value = 1e-9;
+}
 const sequenceCount = usePersistentRef<number>('sequenceCount', 3);
+const seed = usePersistentRef<number>('seed', 42);
 const isGenerating = ref(false);
 
 // Probability composable
@@ -174,10 +211,8 @@ const {
   currentProbability,
   combinationCount,
   skippedCount,
-  truncatedAdds,
-  calculateProbability,
-  resetProbabilityCache
-} = useProbability(myListOfSimple, tolerance, logs, isGenerating);
+  truncatedAdds
+} = useProbability(myListOfSimple, tolerance, logs);
 
 // Sequence generation composable
 const {
@@ -189,16 +224,20 @@ const {
   progressCurrent,
   progressTotal,
   getList,
-  getListFast
+  getListFast,
+  stopRequested,
+  stopGeneration,
+  dispose: disposeGeneration
 } = useSequenceGeneration(
   myListOfSimple,
   currentNumber,
   currentProbability,
-  resetProbabilityCache,
-  calculateProbability,
   logs,
   initialValue,
-  isGenerating
+  isGenerating,
+  seed,
+  tolerance,
+  { combinations: combinationCount, skipped: skippedCount, truncatedAdds }
 );
 
 // Chart management composable
@@ -229,12 +268,27 @@ const {
 
 const experimentVisible = ref<Record<string, boolean>>({});
 const experimentChartCanvas = ref<HTMLCanvasElement | null>(null);
+const theoryOverlays = usePersistentRef<boolean>('theoryOverlays', true);
+const experimentLogX = usePersistentRef<boolean>('experimentLogX', false);
 
 const visibleExperimentCurves = computed(() =>
   analysisGroups.value
     .filter((group) => experimentVisible.value[group.key] !== false)
     .map((group) => ({ key: group.key, colorIndex: group.colorIndex, points: group.points }))
 );
+
+const experimentOverlays = computed<ExperimentOverlays | null>(() => {
+  if (!theoryOverlays.value) return null;
+  const visible = analysisGroups.value.filter((group) => experimentVisible.value[group.key] !== false);
+  if (visible.length === 0) return null;
+  const widest = visible.reduce((a, b) => (b.points.length > a.points.length ? b : a));
+  const sample = widest.points.filter((p) => p.real !== undefined && p.li !== undefined);
+  if (sample.length === 0) return null;
+  return {
+    liDiff: sample.map((p) => ({ x: p.x, value: (p.li as number) - (p.real as number) })),
+    sqrtPi: sample.map((p) => ({ x: p.x, value: Math.sqrt(p.real as number) }))
+  };
+});
 
 function formatDiff(value: number): string {
   return Math.round(value).toLocaleString('en-US');
@@ -251,10 +305,14 @@ function drawExperimentChart() {
     canvas.height = 420;
   }
   const renderer = new ChartRenderer(canvas);
-  renderer.renderExperimentCurves(curves);
+  renderer.renderExperimentCurves(curves, {
+    overlays: experimentOverlays.value,
+    logX: experimentLogX.value
+  });
 }
 
 watch(experimentVisible, () => drawExperimentChart(), { deep: true });
+watch([theoryOverlays, experimentLogX], () => drawExperimentChart());
 
 async function getListWrapper() {
   await getList(maxSimples.value, showChart);
@@ -263,50 +321,94 @@ async function getListWrapper() {
   drawDistributionChart(myListOfSimple.value);
 }
 
-async function getListFastWrapper() {
-  await getListFast(maxSimples.value, showChart);
+async function getListFastWrapper(seedValue?: number) {
+  await getListFast(maxSimples.value, showChart, seedValue);
 }
+
+const gapAnalysisCanvas = ref<HTMLCanvasElement | null>(null);
+const gapAnalysis = ref<GapAnalysis | null>(null);
+
+const currentGapSequence = computed<number[] | null>(() => {
+  if (multipleSequences.value.length > 1) {
+    return multipleSequences.value[currentSequenceIndex.value] ?? null;
+  }
+  return myListOfSimple.value.length > initialValue.length ? myListOfSimple.value : null;
+});
+
+const gapSubtitle = computed(() =>
+  multipleSequences.value.length > 1 ? `Sequence ${currentSequenceIndex.value + 1}` : ''
+);
+
+const mod6Shares = computed(() => {
+  const mod6 = gapAnalysis.value?.mod6;
+  if (!mod6) return '';
+  return `${mod6.m0.toFixed(1)} / ${mod6.m2.toFixed(1)} / ${mod6.m4.toFixed(1)} %`;
+});
+
+function drawGapChart() {
+  const sequence = currentGapSequence.value;
+  gapAnalysis.value = sequence ? analyzeGaps(sequence) : null;
+  if (!gapAnalysis.value) return;
+  nextTick(() => {
+    const canvas = gapAnalysisCanvas.value;
+    if (!canvas) return;
+    const width = canvas.clientWidth || canvas.width;
+    if (width > 0) {
+      canvas.width = Math.round(width);
+      canvas.height = 260;
+    }
+    new ChartRenderer(canvas).renderGapHistogram(gapAnalysis.value!.histogram);
+  });
+}
+
+watch(currentGapSequence, () => drawGapChart());
 
 async function generateMultipleSequences() {
   showChart.value = false;
-  
+  stopRequested.value = false;
+
   generationStartTime.value = Date.now();
   generationTime.value = 0;
   generationProgress.value = 0;
   progressMode.value = 'multiple';
   isGenerating.value = true;
-  
+
   await new Promise(resolve => setTimeout(resolve, 100));
-  
+
   multipleSequences.value = [];
-  
+
   const originalMyListOfSimple = [...myListOfSimple.value];
   const originalCurrentNumber = currentNumber.value;
-  
+
   for (let seq = 0; seq < sequenceCount.value; seq++) {
+    if (stopRequested.value) break;
+
     myListOfSimple.value = [...initialValue];
     currentNumber.value = initialValue[initialValue.length - 1] + 1;
-    
-    resetProbabilityCache();
-    calculateProbability();
-    
-    await getListFastWrapper();
-    
+
+    await getListFastWrapper(Number(seed.value) + seq);
+
+    if (stopRequested.value) break;
+
     multipleSequences.value.push([...myListOfSimple.value]);
-    
+
     generationProgress.value = ((seq + 1) / sequenceCount.value) * 100;
-    
+
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  
+
   myListOfSimple.value = originalMyListOfSimple;
   currentNumber.value = originalCurrentNumber;
-  
+
   generationTime.value = (Date.now() - generationStartTime.value) / 1000;
-  generationProgress.value = 100;
+  if (!stopRequested.value) {
+    generationProgress.value = 100;
+  }
   isGenerating.value = false;
 
-  drawMultipleSequencesChart();
+  if (multipleSequences.value.length > 0) {
+    drawMultipleSequencesChart();
+  }
 }
 
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -316,6 +418,7 @@ function handleResize() {
   resizeTimer = setTimeout(() => {
     resizeTimer = undefined;
     drawExperimentChart();
+    drawGapChart();
     if (!showChart.value) return;
     if (multipleSequences.value.length > 1) drawMultipleSequencesChart();
     else drawDistributionChart(myListOfSimple.value);
@@ -338,6 +441,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
   if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+  disposeGeneration();
 });
 </script>
 

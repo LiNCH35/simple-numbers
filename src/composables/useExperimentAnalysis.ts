@@ -4,6 +4,8 @@ export interface ExperimentCurvePoint {
   x: number;
   avgDiff: number;
   std: number | null;
+  real?: number;
+  li?: number;
 }
 
 export interface ExperimentGroup {
@@ -33,7 +35,7 @@ interface AnalysisGroupRaw {
     std: number | null;
     relDev: number;
   };
-  curveSample: ExperimentCurvePoint[];
+  curveSample: { x: number; avgDiff: number; std?: number | null; real?: number; li?: number }[];
 }
 
 interface AnalysisJsonRaw {
@@ -68,7 +70,9 @@ export function useExperimentAnalysis() {
           points: group.curveSample.map((p) => ({
             x: p.x,
             avgDiff: p.avgDiff,
-            std: p.std === undefined ? null : p.std
+            std: p.std === undefined ? null : p.std,
+            real: p.real,
+            li: p.li
           }))
         }));
       totalRuns.value = groups.value.reduce((sum, group) => sum + group.runs, 0);

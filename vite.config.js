@@ -15,6 +15,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  worker: {
+    format: 'es'
+  },
   optimizeDeps: {
     include: ['gpu.js']
   },
