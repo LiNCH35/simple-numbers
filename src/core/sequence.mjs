@@ -1,13 +1,14 @@
 import { ProbabilityCalculator } from './probability.mjs';
 
-export function mulberry32(seed) {
+export function splitmix32(seed) {
   let a = seed >>> 0;
   return function () {
-    a |= 0;
-    a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    a = (a + 0x9e3779b9) | 0;
+    let t = a ^ (a >>> 16);
+    t = Math.imul(t, 0x21f0aaad);
+    t = t ^ (t >>> 15);
+    t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296;
   };
 }
 
@@ -57,6 +58,8 @@ export function calculateSequenceDifferences(sequence, xMax, xStep = 5) {
   return points;
 }
 
+export const TWIN_PRIME_CONSTANT = 1.3203236316937392;
+
 export function createGenerator(options = {}) {
   const {
     seed = 42,
@@ -65,8 +68,9 @@ export function createGenerator(options = {}) {
     maxCombinations = Infinity,
     initial = [2, 3],
     mode = 'jump',
-    calibrated = false,
-    trackProbability = true
+    trackProbability = true,
+    jumpGap = 'round',
+    twinBias = false
   } = options;
 
   if (mode !== 'jump' && mode !== 'step') {
@@ -84,15 +88,21 @@ export function createGenerator(options = {}) {
   if (!Number.isFinite(tolerance) || tolerance <= 0) {
     throw new Error(`tolerance must be a positive finite number, got: ${tolerance}`);
   }
-  if (typeof calibrated !== 'boolean') {
-    throw new Error(`calibrated must be a boolean, got: ${calibrated}`);
-  }
   if (typeof trackProbability !== 'boolean') {
     throw new Error(`trackProbability must be a boolean, got: ${trackProbability}`);
   }
+  if (jumpGap !== 'round' && jumpGap !== 'floor') {
+    throw new Error(`jumpGap must be "round" or "floor", got: ${jumpGap}`);
+  }
+  if (typeof twinBias !== 'boolean') {
+    throw new Error(`twinBias must be a boolean, got: ${twinBias}`);
+  }
+  if (twinBias && mode !== 'step') {
+    throw new Error('twinBias requires step mode');
+  }
 
   const initialList = initial.slice();
-  const random = mulberry32(seed);
+  const random = splitmix32(seed);
   const calculator = new ProbabilityCalculator(sensitivity, tolerance, maxCombinations);
   const sequence = initialList.slice();
 
@@ -108,20 +118,26 @@ export function createGenerator(options = {}) {
   };
 
   const nextJump = () => {
-    if (calibrated) {
-      currentNumber += Math.max(1, Math.round(-Math.log(1 - random()) * Math.log(currentNumber)));
+    if (jumpGap === 'floor') {
+      currentNumber += 1 + Math.floor(-Math.log(1 - random()) * (Math.log(currentNumber) - 0.5));
     } else {
-      const min = currentNumber + 1;
-      const max = min + 1 / Math.max(calculator.probability, Number.EPSILON);
-      currentNumber = Math.floor(random() * (max - min)) + min;
+      currentNumber += Math.max(1, Math.round(-Math.log(1 - random()) * Math.log(currentNumber)));
     }
     acceptNumber(currentNumber);
   };
 
   const nextStep = () => {
-    const accepted = calibrated
-      ? random() < 1 / Math.log(currentNumber)
-      : random() <= calculator.probability;
+    const logX = Math.log(currentNumber);
+    let probability = 1 / logX;
+    if (twinBias) {
+      const compensation = 1 + ((TWIN_PRIME_CONSTANT - 1) / logX) * (1 - 1 / logX);
+      if (currentNumber - sequence[sequence.length - 1] === 2) {
+        probability = Math.min(1, (probability * TWIN_PRIME_CONSTANT) / compensation);
+      } else {
+        probability /= compensation;
+      }
+    }
+    const accepted = random() < probability;
     if (accepted) {
       acceptNumber(currentNumber);
     }

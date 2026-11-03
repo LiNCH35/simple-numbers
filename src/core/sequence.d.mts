@@ -1,6 +1,7 @@
 import { ProbabilityCalculator } from './probability.mjs';
 
-export declare function mulberry32(seed: number): () => number;
+export declare function splitmix32(seed: number): () => number;
+export declare const TWIN_PRIME_CONSTANT: number;
 export declare function isPrime(n: number): boolean;
 export declare function primeCountPrefix(limit: number): Uint32Array;
 export declare function countPrimesUpTo(limit: number): number;
@@ -34,6 +35,7 @@ export declare function createGenerator(options?: {
   maxCombinations?: number;
   initial?: number[];
   mode?: 'jump' | 'step';
-  calibrated?: boolean;
   trackProbability?: boolean;
+  jumpGap?: 'round' | 'floor';
+  twinBias?: boolean;
 }): Generator;

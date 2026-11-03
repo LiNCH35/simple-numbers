@@ -64,6 +64,21 @@ function sampleIndices(n, target) {
   return [...new Set(indices)];
 }
 
+const LI_OFFSET = 1.045163780117;
+function logIntegral(x) {
+  if (!Number.isFinite(x) || x < 2) return 0;
+  const a = Math.log(2);
+  const b = Math.log(x);
+  const n = 2000;
+  const h = (b - a) / n;
+  let sum = Math.exp(a) / a + Math.exp(b) / b;
+  for (let i = 1; i < n; i++) {
+    const u = a + i * h;
+    sum += (i % 2 === 1 ? 4 : 2) * (Math.exp(u) / u);
+  }
+  return LI_OFFSET + (sum * h) / 3;
+}
+
 function gapStats(sequence) {
   const n = sequence.length - 1;
   if (n <= 0) return null;
@@ -202,13 +217,14 @@ function runSummaryTable(runs) {
 function curveTable(group, rows = 30) {
   const indices = sampleIndices(group.nPoints, rows);
   const lines = [
-    '| x | real pi(x) | pseudo-real avg | std | min | max | rel dev % |',
-    '|---|---|---|---|---|---|---|'
+    '| x | real pi(x) | Li(x) | pseudo-real avg | N−Li | std | min | max | rel dev % |',
+    '|---|---|---|---|---|---|---|---|---|'
   ];
   for (const k of indices) {
+    const li = logIntegral(group.xs[k]);
     lines.push(
-      `| ${group.xs[k]} | ${realAt(group, k)} | ` +
-        `${fmt(group.avg[k])} | ${fmt(group.std[k])} | ${group.min[k]} | ${group.max[k]} | ${fmt(group.rel[k] * 100, 3)} |`
+      `| ${group.xs[k]} | ${realAt(group, k)} | ${li.toFixed(0)} | ` +
+        `${fmt(group.avg[k])} | ${fmt(group.avg[k] - li + realAt(group, k), 0)} | ${fmt(group.std[k])} | ${group.min[k]} | ${group.max[k]} | ${fmt(group.rel[k] * 100, 3)} |`
     );
   }
   return lines.join('\n');
@@ -278,13 +294,18 @@ const analysisOut = {
   groups: {}
 };
 for (const [key, g] of built) {
+  const liFinal = logIntegral(g.stats.final.x);
   analysisOut.groups[key] = {
     n: g.runs.length,
     xStep: g.stats.xStep,
     xMaxCommon: g.stats.xMaxCommon,
     nPoints: g.stats.nPoints,
     slope: g.stats.slope,
-    final: g.stats.final,
+    final: {
+      ...g.stats.final,
+      li: liFinal,
+      liDiff: g.stats.final.avgDiff - liFinal + g.stats.final.real
+    },
     issues: g.issues,
     gap: g.gaps,
     runs: g.runs.map(({ raw, issues }) => ({
@@ -297,15 +318,20 @@ for (const [key, g] of built) {
       stats: raw.stats,
       issues
     })),
-    curveSample: sampleIndices(g.stats.nPoints, 1500).map((k) => ({
-      x: g.stats.xs[k],
-      real: realAt(g.stats, k),
-      avgDiff: g.stats.avg[k],
-      std: g.stats.std[k],
-      min: g.stats.min[k],
-      max: g.stats.max[k],
-      relDev: g.stats.rel[k]
-    }))
+    curveSample: sampleIndices(g.stats.nPoints, 1500).map((k) => {
+      const li = logIntegral(g.stats.xs[k]);
+      return {
+        x: g.stats.xs[k],
+        real: realAt(g.stats, k),
+        li,
+        avgDiff: g.stats.avg[k],
+        liDiff: g.stats.avg[k] - li + realAt(g.stats, k),
+        std: g.stats.std[k],
+        min: g.stats.min[k],
+        max: g.stats.max[k],
+        relDev: g.stats.rel[k]
+      };
+    })
   };
 }
 
@@ -377,12 +403,12 @@ md.push(`Total runs: ${runs.length}; groups: ${built.size}; comparisons: ${compa
 md.push('');
 md.push('## Key numbers');
 md.push('');
-md.push('| group | n | x common | final avg diff | std | rel dev % | slope (diff/x) |');
-md.push('|---|---|---|---|---|---|---|');
+md.push('| group | n | x common | final avg diff | std | rel dev % | avg N−Li | slope (diff/x) |');
+md.push('|---|---|---|---|---|---|---|---|');
 for (const [key, g] of built) {
   const f = g.stats.final;
   md.push(
-    `| ${key} | ${g.runs.length} | ${f.x} | ${fmt(f.avgDiff)} | ${fmt(f.std)} | ${fmt(f.relDev * 100, 3)} | ${g.stats.slope.toExponential(3)} |`
+    `| ${key} | ${g.runs.length} | ${f.x} | ${fmt(f.avgDiff)} | ${fmt(f.std)} | ${fmt(f.relDev * 100, 3)} | ${fmt(f.avgDiff - logIntegral(f.x) + f.real, 0)} | ${g.stats.slope.toExponential(3)} |`
   );
 }
 md.push('');
@@ -443,8 +469,9 @@ writeFileSync(path.join(resultsDir, `analysis${suffix}.md`), md.join('\n'));
 console.log(`analysis written: analysis${suffix}.json, analysis${suffix}.md`);
 for (const [key, g] of built) {
   const f = g.stats.final;
+  const liDiff = f.avgDiff - logIntegral(f.x) + f.real;
   console.log(
-    `${key}: n=${g.runs.length} x<=${f.x} avgDiff=${fmt(f.avgDiff)} std=${fmt(f.std)} rel=${fmt(f.relDev * 100, 3)}% slope=${g.stats.slope.toExponential(3)}`
+    `${key}: n=${g.runs.length} x<=${f.x} avgDiff=${fmt(f.avgDiff)} std=${fmt(f.std)} rel=${fmt(f.relDev * 100, 3)}% N-Li=${fmt(liDiff, 0)} slope=${g.stats.slope.toExponential(3)}`
   );
 }
 for (const c of comparisons) {

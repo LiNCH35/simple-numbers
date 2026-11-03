@@ -58,7 +58,6 @@ export function useExperimentAnalysis() {
       const data = (await response.json()) as AnalysisJsonRaw;
       generatedAt.value = data.generatedAt;
       groups.value = Object.entries(data.groups)
-        .filter(([key]) => key.startsWith('cal-'))
         .map(([key, group], index) => ({
           key,
           colorIndex: index,

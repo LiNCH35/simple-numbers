@@ -16,56 +16,37 @@ function log(message) {
 }
 
 const quick = process.argv.includes('--quick');
-const calibrated = process.argv.includes('--calibrated');
-const long = process.argv.includes('--long');
 
 const smokeMatrix = [
   { id: 'smoke-jump', mode: 'jump', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 },
   { id: 'smoke-step', mode: 'step', seed: 42, tolerance: 1e-9, count: 2000, maxCombinations: 1e9, xStep: 5 }
 ];
 
-const fullMatrix = [
-  { id: 'anchor-jump-s42-1e-10-100k', mode: 'jump', seed: 42, tolerance: 1e-10, count: 100000, maxCombinations: 5e10, xStep: 5 },
-  { id: 'jump-s1-1e-10-300k', mode: 'jump', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'jump-s2-1e-10-300k', mode: 'jump', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'jump-s3-1e-10-300k', mode: 'jump', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'jump-s4-1e-10-300k', mode: 'jump', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'step-s1-1e-10-300k', mode: 'step', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'step-s2-1e-10-300k', mode: 'step', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'step-s3-1e-10-300k', mode: 'step', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'step-s4-1e-10-300k', mode: 'step', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10 },
-  { id: 'premium-jump-s1-1e-11-50k', mode: 'jump', seed: 1, tolerance: 1e-11, count: 50000, maxCombinations: 2e11, xStep: 5, premium: true },
-  { id: 'premium-step-s2-1e-11-50k', mode: 'step', seed: 2, tolerance: 1e-11, count: 50000, maxCombinations: 2e11, xStep: 5, premium: true }
-];
-
-const calMatrix = [
-  { id: 'anchor-cal-jump-s42-1e-10-100k', mode: 'jump', seed: 42, tolerance: 1e-10, count: 100000, maxCombinations: 5e10, xStep: 5, calibrated: true },
-  { id: 'cal-jump-s1-1e-10-300k', mode: 'jump', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-jump-s2-1e-10-300k', mode: 'jump', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-jump-s3-1e-10-300k', mode: 'jump', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-jump-s4-1e-10-300k', mode: 'jump', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-step-s1-1e-10-300k', mode: 'step', seed: 1, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-step-s2-1e-10-300k', mode: 'step', seed: 2, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-step-s3-1e-10-300k', mode: 'step', seed: 3, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true },
-  { id: 'cal-step-s4-1e-10-300k', mode: 'step', seed: 4, tolerance: 1e-10, count: 300000, maxCombinations: 5e10, xStep: 10, calibrated: true }
-];
-
 const longMatrix = [
-  { id: 'cal-jump-s1-1e-10-2M', mode: 'jump', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-jump-s2-1e-10-2M', mode: 'jump', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-jump-s3-1e-10-2M', mode: 'jump', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-jump-s4-1e-10-2M', mode: 'jump', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-jump-s5-1e-10-2M', mode: 'jump', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-step-s1-1e-10-2M', mode: 'step', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-step-s2-1e-10-2M', mode: 'step', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-step-s3-1e-10-2M', mode: 'step', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-step-s4-1e-10-2M', mode: 'step', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true },
-  { id: 'cal-step-s5-1e-10-2M', mode: 'step', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, calibrated: true }
+  { id: 'jump-s1-1e-10-2M', mode: 'jump', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'jump-s2-1e-10-2M', mode: 'jump', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'jump-s3-1e-10-2M', mode: 'jump', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'jump-s4-1e-10-2M', mode: 'jump', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'jump-s5-1e-10-2M', mode: 'jump', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'jump-floor-s1-1e-10-2M', mode: 'jump', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, jumpGap: 'floor' },
+  { id: 'jump-floor-s2-1e-10-2M', mode: 'jump', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, jumpGap: 'floor' },
+  { id: 'jump-floor-s3-1e-10-2M', mode: 'jump', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, jumpGap: 'floor' },
+  { id: 'jump-floor-s4-1e-10-2M', mode: 'jump', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, jumpGap: 'floor' },
+  { id: 'jump-floor-s5-1e-10-2M', mode: 'jump', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, jumpGap: 'floor' },
+  { id: 'step-s1-1e-10-2M', mode: 'step', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'step-s2-1e-10-2M', mode: 'step', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'step-s3-1e-10-2M', mode: 'step', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'step-s4-1e-10-2M', mode: 'step', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'step-s5-1e-10-2M', mode: 'step', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200 },
+  { id: 'step-twin-s1-1e-10-2M', mode: 'step', seed: 1, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, twinBias: true },
+  { id: 'step-twin-s2-1e-10-2M', mode: 'step', seed: 2, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, twinBias: true },
+  { id: 'step-twin-s3-1e-10-2M', mode: 'step', seed: 3, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, twinBias: true },
+  { id: 'step-twin-s4-1e-10-2M', mode: 'step', seed: 4, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, twinBias: true },
+  { id: 'step-twin-s5-1e-10-2M', mode: 'step', seed: 5, tolerance: 1e-10, count: 2000000, maxCombinations: 5e10, xStep: 200, twinBias: true }
 ];
 
-const matrix = quick ? smokeMatrix : long ? longMatrix : calibrated ? calMatrix : fullMatrix;
+const matrix = quick ? smokeMatrix : longMatrix;
 
-const PREMIUM_SKIP_MS = 15 * 60 * 1000;
 const CHUNK = quick ? 500 : 50000;
 
 mkdirSync(resultsDir, { recursive: true });
@@ -73,7 +54,6 @@ mkdirSync(resultsDir, { recursive: true });
 log(quick ? '=== QUICK SMOKE RUN ===' : '=== EXPERIMENT START ===');
 log(`planned runs: ${matrix.length}`);
 
-let premiumElapsed = 0;
 let completed = 0;
 
 try {
@@ -84,13 +64,10 @@ for (const run of matrix) {
     completed++;
     continue;
   }
-  if (run.premium && premiumElapsed > PREMIUM_SKIP_MS) {
-    log(`SKIP ${run.id}: premium budget exceeded (${Math.round(premiumElapsed / 1000)}s spent on previous premium runs)`);
-    continue;
-  }
   log(
     `START ${run.id}: mode=${run.mode} seed=${run.seed} tolerance=${run.tolerance} ` +
-      `count=${run.count} maxCombinations=${run.maxCombinations} calibrated=${run.calibrated === true}`
+      `count=${run.count} maxCombinations=${run.maxCombinations} ` +
+      `jumpGap=${run.jumpGap} twinBias=${run.twinBias === true}`
   );
   const startedAt = Date.now();
   try {
@@ -99,8 +76,9 @@ for (const run of matrix) {
       tolerance: run.tolerance,
       maxCombinations: run.maxCombinations,
       mode: run.mode,
-      calibrated: run.calibrated === true,
-      trackProbability: run.calibrated !== true
+      trackProbability: false,
+      jumpGap: run.jumpGap,
+      twinBias: run.twinBias === true
     });
     let truncatedAdds = 0;
     let stats = null;
@@ -121,8 +99,9 @@ for (const run of matrix) {
     const realPrimes = countPrimesUpTo(xMax);
     const payload = {
       id: run.id,
-      mode: run.calibrated ? `cal-${run.mode}` : run.mode,
-      calibrated: run.calibrated === true,
+      mode: `${run.mode}${run.jumpGap === 'floor' ? '-floor' : ''}${run.twinBias ? '-twin' : ''}`,
+      jumpGap: run.jumpGap,
+      twinBias: run.twinBias === true,
       seed: run.seed,
       tolerance: run.tolerance,
       maxCombinations: run.maxCombinations,
@@ -148,7 +127,6 @@ for (const run of matrix) {
         `probability=${stats.probability.toExponential(6)}, combinations=${stats.combinations}, ` +
         `skipped=${stats.skippedCombinations}, truncatedAdds=${truncatedAdds}`
     );
-    if (run.premium) premiumElapsed += durationMs;
     completed++;
   } catch (error) {
     log(`ERROR ${run.id}: ${error.message}`);

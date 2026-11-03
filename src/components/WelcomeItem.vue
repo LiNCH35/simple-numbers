@@ -33,10 +33,6 @@
               <input type="checkbox" v-model="logs">
               Logs
             </label>
-            <label class="check-label">
-              <input type="checkbox" v-model="calibrated">
-              Calibrated (Cramér)
-            </label>
             <label>
               Tolerance:
               <select v-model="tolerance">
@@ -168,7 +164,6 @@ const initialValue = [2, 3];
 const myListOfSimple = ref<number[]>(initialValue);
 const currentNumber = ref(initialValue[initialValue.length - 1] + 1);
 const logs = usePersistentRef<boolean>('logs', false);
-const calibrated = usePersistentRef<boolean>('calibrated', false);
 const maxSimples = usePersistentRef<number>('maxSimples', 25);
 const tolerance = usePersistentRef<number>('tolerance', 1e-9);
 const sequenceCount = usePersistentRef<number>('sequenceCount', 3);
@@ -177,12 +172,10 @@ const isGenerating = ref(false);
 // Probability composable
 const {
   currentProbability,
-  currentProbabilitySum,
   combinationCount,
   skippedCount,
   truncatedAdds,
   calculateProbability,
-  addProbabilityContributions,
   resetProbabilityCache
 } = useProbability(myListOfSimple, tolerance, logs, isGenerating);
 
@@ -201,13 +194,10 @@ const {
   myListOfSimple,
   currentNumber,
   currentProbability,
-  currentProbabilitySum,
-  addProbabilityContributions,
   resetProbabilityCache,
   calculateProbability,
   logs,
   initialValue,
-  calibrated,
   isGenerating
 );
 

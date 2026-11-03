@@ -4,13 +4,10 @@ export function useSequenceGeneration(
   myListOfSimple: any,
   currentNumber: any,
   currentProbability: any,
-  currentProbabilitySum: any,
-  addProbabilityContributions: any,
   resetProbabilityCache: any,
   calculateProbability: any,
   logs: any,
   initialValue: number[],
-  calibrated: any,
   isGenerating: any
 ) {
   const result = ref<[number, number][][]>([]);
@@ -29,20 +26,13 @@ export function useSequenceGeneration(
 
   function getNextSimpleByStep() {
     const result = isNextSimple();
-    
+
     if (result) {
       const newPrime = currentNumber.value;
       myListOfSimple.value = [...myListOfSimple.value, newPrime];
-
-      if (calibrated.value) {
-        currentProbability.value = 1 / Math.log(newPrime);
-      } else {
-        addProbabilityContributions(newPrime);
-        currentProbability.value = 1 - currentProbabilitySum.value;
-      }
-
+      currentProbability.value = 1 / Math.log(newPrime);
       nextTick();
-      
+
       myLog('simple');
     } else {
       myLog('not simple');
@@ -52,29 +42,15 @@ export function useSequenceGeneration(
   }
 
   function getNextSimple() {
-    if (calibrated.value) {
-      const gap = Math.max(1, Math.round(-Math.log(1 - Math.random()) * Math.log(currentNumber.value)));
-      currentNumber.value += gap;
-      myListOfSimple.value = [...myListOfSimple.value, currentNumber.value];
-      currentProbability.value = 1 / Math.log(currentNumber.value);
-      nextTick();
-      return;
-    }
-    const min = currentNumber.value + 1;
-    const max = min + (1 / currentProbability.value);
-    currentNumber.value = Math.floor(Math.random() * (max - min)) + min;
+    const gap = Math.max(1, Math.round(-Math.log(1 - Math.random()) * Math.log(currentNumber.value)));
+    currentNumber.value += gap;
     myListOfSimple.value = [...myListOfSimple.value, currentNumber.value];
-    addProbabilityContributions(currentNumber.value);
-    currentProbability.value = 1 - currentProbabilitySum.value;
+    currentProbability.value = 1 / Math.log(currentNumber.value);
     nextTick();
   }
 
   function isNextSimple() {
-    const randomNumber = Math.random();
-    if (calibrated.value) {
-      return randomNumber < 1 / Math.log(currentNumber.value);
-    }
-    return randomNumber <= currentProbability.value;
+    return Math.random() < 1 / Math.log(currentNumber.value);
   }
 
   async function getList(maxSimples: number, showChart: any) {
@@ -126,22 +102,22 @@ export function useSequenceGeneration(
 
   async function getListFast(maxSimples: number, showChart: any) {
     showChart.value = false;
-    
+
     generationStartTime.value = Date.now();
     generationTime.value = 0;
-    
+
     myListOfSimple.value = initialValue;
     currentNumber.value = myListOfSimple.value[myListOfSimple.value.length - 1] + 1;
-    
+
     resetProbabilityCache();
     calculateProbability();
 
     do {
       getNextSimple();
     } while (maxSimples > myListOfSimple.value.length);
-    
+
     generationTime.value = (Date.now() - generationStartTime.value) / 1000;
-    
+
     result.value.push(myListOfSimple.value.map((v, i) => [v, i]));
   }
 
