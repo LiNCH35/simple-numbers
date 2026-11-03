@@ -57,20 +57,22 @@ export function useExperimentAnalysis() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as AnalysisJsonRaw;
       generatedAt.value = data.generatedAt;
-      totalRuns.value = data.totalRuns;
-      groups.value = Object.entries(data.groups).map(([key, group], index) => ({
-        key,
-        colorIndex: index,
-        runs: group.n,
-        xMaxCommon: group.xMaxCommon,
-        slope: group.slope,
-        final: group.final,
-        points: group.curveSample.map((p) => ({
-          x: p.x,
-          avgDiff: p.avgDiff,
-          std: p.std === undefined ? null : p.std
-        }))
-      }));
+      groups.value = Object.entries(data.groups)
+        .filter(([key]) => key.startsWith('cal-'))
+        .map(([key, group], index) => ({
+          key,
+          colorIndex: index,
+          runs: group.n,
+          xMaxCommon: group.xMaxCommon,
+          slope: group.slope,
+          final: group.final,
+          points: group.curveSample.map((p) => ({
+            x: p.x,
+            avgDiff: p.avgDiff,
+            std: p.std === undefined ? null : p.std
+          }))
+        }));
+      totalRuns.value = groups.value.reduce((sum, group) => sum + group.runs, 0);
       return true;
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
