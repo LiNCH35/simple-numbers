@@ -1,4 +1,4 @@
-# Experiment analysis (2026-11-03T07:15:13.055Z)
+# Experiment analysis (2026-11-03T07:49:32.597Z)
 
 Total runs: 11; groups: 5; comparisons: 2
 
@@ -60,6 +60,13 @@ Average difference curve (pseudo-prime count minus real pi(x)):
 | 1181240 | 91590 | 5058.00 | - | 5058 | 5058 | 5.522 |
 | 1223425 | 94585 | 5414.00 | - | 5414 | 5414 | 5.724 |
 
+Gap structure (real primes vs pseudo-prime runs):
+
+| source | gaps | mean gap | ln(x) | var/mean² | gap=1 % | odd % | gap=2 % | twin×meanGap | mod6 0/2/4 % |
+|---|---|---|---|---|---|---|---|---|---|
+| real primes | 94584 | 12.935 | 14.02 | 0.661 | 0.00 | 0.00 | 10.29 | 1.331 | 41.9 / 29.0 / 29.0 |
+| anchor-jump-s42-1e-10-100k | 99999 | 12.234 | 14.02 | 0.308 | 4.27 | 46.50 | 4.24 | 0.518 | 15.4 / 17.0 / 16.9 |
+
 ### jump-n300000-tol1e-10-xs10
 
 Integrity: OK
@@ -106,6 +113,18 @@ Average difference curve (pseudo-prime count minus real pi(x)):
 | 3334650 | 239198 | 40945.00 | 7959.61 | 33411 | 50369 | 17.118 |
 | 3453740 | 247148 | 43083.00 | 8273.74 | 35191 | 52851 | 17.432 |
 
+Gap structure (real primes vs pseudo-prime runs):
+
+| source | gaps | mean gap | ln(x) | var/mean² | gap=1 % | odd % | gap=2 % | twin×meanGap | mod6 0/2/4 % |
+|---|---|---|---|---|---|---|---|---|---|
+| real primes | 247148 | 13.974 | 15.05 | 0.683 | 0.00 | 0.00 | 9.57 | 1.337 | 42.6 / 28.7 / 28.7 |
+| jump-s1-1e-10-300k | 299999 | 12.226 | 15.05 | 0.307 | 4.26 | 46.76 | 4.25 | 0.520 | 15.0 / 17.1 / 16.9 |
+| jump-s2-1e-10-300k | 299999 | 11.741 | 15.05 | 0.307 | 4.42 | 46.77 | 4.50 | 0.529 | 13.4 / 17.6 / 17.7 |
+| jump-s3-1e-10-300k | 299999 | 12.134 | 15.05 | 0.306 | 4.34 | 47.20 | 4.26 | 0.517 | 14.1 / 17.2 / 17.2 |
+| jump-s4-1e-10-300k | 299999 | 11.513 | 15.05 | 0.307 | 4.53 | 45.72 | 4.59 | 0.528 | 13.5 / 18.2 / 18.0 |
+
+Fluctuations: cross-seed σ at final x = 8274 vs Cramér Poisson prediction √π(x) = 497 (×16.6)
+
 ### jump-n50000-tol1e-11-xs5
 
 Integrity: OK
@@ -149,6 +168,13 @@ Average difference curve (pseudo-prime count minus real pi(x)):
 | 618245 | 50485 | -2094.00 | - | -2094 | -2094 | -4.148 |
 | 640325 | 52104 | -2104.00 | - | -2104 | -2104 | -4.038 |
 
+Gap structure (real primes vs pseudo-prime runs):
+
+| source | gaps | mean gap | ln(x) | var/mean² | gap=1 % | odd % | gap=2 % | twin×meanGap | mod6 0/2/4 % |
+|---|---|---|---|---|---|---|---|---|---|
+| real primes | 52103 | 12.289 | 13.37 | 0.647 | 0.00 | 0.00 | 10.82 | 1.329 | 41.4 / 29.3 / 29.3 |
+| premium-jump-s1-1e-11-50k | 49999 | 12.807 | 13.37 | 0.323 | 4.02 | 46.71 | 4.29 | 0.550 | 15.1 / 18.4 / 15.8 |
+
 ### step-n50000-tol1e-11-xs5
 
 Integrity: OK
@@ -191,6 +217,13 @@ Average difference curve (pseudo-prime count minus real pi(x)):
 | 705305 | 56954 | -10323.00 | - | -10323 | -10323 | -18.125 |
 | 731430 | 58889 | -10534.00 | - | -10534 | -10534 | -17.888 |
 | 757550 | 60792 | -10793.00 | - | -10793 | -10793 | -17.754 |
+
+Gap structure (real primes vs pseudo-prime runs):
+
+| source | gaps | mean gap | ln(x) | var/mean² | gap=1 % | odd % | gap=2 % | twin×meanGap | mod6 0/2/4 % |
+|---|---|---|---|---|---|---|---|---|---|
+| real primes | 60792 | 12.461 | 13.54 | 0.648 | 0.00 | 0.00 | 10.62 | 1.324 | 41.6 / 29.2 / 29.2 |
+| premium-step-s2-1e-11-50k | 49999 | 15.151 | 13.54 | 0.932 | 6.43 | 45.22 | 6.19 | 0.938 | 14.1 / 18.4 / 15.8 |
 
 ### step-n300000-tol1e-10-xs10
 
@@ -237,6 +270,18 @@ Average difference curve (pseudo-prime count minus real pi(x)):
 | 4215630 | 297349 | -22135.25 | 5447.43 | -27531 | -17185 | -7.444 |
 | 4371770 | 307492 | -22470.75 | 5594.20 | -28033 | -17344 | -7.308 |
 | 4527900 | 317744 | -22867.00 | 5677.32 | -28510 | -17746 | -7.197 |
+
+Gap structure (real primes vs pseudo-prime runs):
+
+| source | gaps | mean gap | ln(x) | var/mean² | gap=1 % | odd % | gap=2 % | twin×meanGap | mod6 0/2/4 % |
+|---|---|---|---|---|---|---|---|---|---|
+| real primes | 317744 | 14.250 | 15.33 | 0.686 | 0.00 | 0.00 | 9.40 | 1.340 | 42.7 / 28.7 / 28.7 |
+| step-s1-1e-10-300k | 299999 | 15.120 | 15.33 | 0.934 | 6.63 | 44.95 | 6.19 | 0.936 | 14.0 / 18.4 / 16.1 |
+| step-s2-1e-10-300k | 299999 | 15.589 | 15.33 | 0.935 | 6.38 | 45.09 | 6.05 | 0.944 | 14.1 / 18.4 / 16.0 |
+| step-s3-1e-10-300k | 299999 | 15.093 | 15.33 | 0.939 | 6.58 | 45.19 | 6.24 | 0.941 | 14.0 / 18.3 / 15.9 |
+| step-s4-1e-10-300k | 299999 | 15.670 | 15.33 | 0.942 | 6.42 | 45.40 | 5.94 | 0.930 | 14.0 / 18.2 / 16.0 |
+
+Fluctuations: cross-seed σ at final x = 5677 vs Cramér Poisson prediction √π(x) = 564 (×10.1)
 
 ## Mode comparisons
 

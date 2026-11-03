@@ -64,6 +64,50 @@ function sampleIndices(n, target) {
   return [...new Set(indices)];
 }
 
+function gapStats(sequence) {
+  const n = sequence.length - 1;
+  if (n <= 0) return null;
+  let sum = 0;
+  let sum2 = 0;
+  let gap1 = 0;
+  let odd = 0;
+  let twin = 0;
+  let m0 = 0;
+  let m2 = 0;
+  let m4 = 0;
+  for (let i = 0; i < n; i++) {
+    const g = sequence[i + 1] - sequence[i];
+    sum += g;
+    sum2 += g * g;
+    if (g === 1) gap1++;
+    else if (g % 2 === 1) odd++;
+    if (g === 2) twin++;
+    if (g % 6 === 0) m0++;
+    else if (g % 6 === 2) m2++;
+    else if (g % 6 === 4) m4++;
+  }
+  const mean = sum / n;
+  const variance = sum2 / n - mean * mean;
+  return {
+    gaps: n,
+    meanGap: mean,
+    dispersion: variance / (mean * mean),
+    gap1Pct: (100 * gap1) / n,
+    oddPct: (100 * odd) / n,
+    twinPct: (100 * twin) / n,
+    twinIndex: (twin / n) * mean,
+    mod6: { m0: (100 * m0) / n, m2: (100 * m2) / n, m4: (100 * m4) / n }
+  };
+}
+
+function realPrimesFromCounts(counts) {
+  const primes = [];
+  for (let n = 2; n < counts.length; n++) {
+    if (counts[n] > counts[n - 1]) primes.push(n);
+  }
+  return primes;
+}
+
 function buildGroup(runs) {
   const raw0 = runs[0].raw;
   const xStep = raw0.xStep;
@@ -178,6 +222,26 @@ function realAt(group, k) {
   return realCache.counts[group.xs[k]];
 }
 
+function fmtPct(value) {
+  return value === null || value === undefined ? '-' : value.toFixed(2);
+}
+
+function gapTable(gaps, lnX) {
+  const lines = [
+    '| source | gaps | mean gap | ln(x) | var/mean² | gap=1 % | odd % | gap=2 % | twin×meanGap | mod6 0/2/4 % |',
+    '|---|---|---|---|---|---|---|---|---|---|'
+  ];
+  const row = (source, s) =>
+    lines.push(
+      `| ${source} | ${s.gaps} | ${s.meanGap.toFixed(3)} | ${lnX.toFixed(2)} | ${s.dispersion.toFixed(3)} | ` +
+        `${fmtPct(s.gap1Pct)} | ${fmtPct(s.oddPct)} | ${fmtPct(s.twinPct)} | ${s.twinIndex.toFixed(3)} | ` +
+        `${s.mod6.m0.toFixed(1)} / ${s.mod6.m2.toFixed(1)} / ${s.mod6.m4.toFixed(1)} |`
+    );
+  row('real primes', gaps.real);
+  for (const r of gaps.runs) row(r.id, r);
+  return lines.join('\n');
+}
+
 const runs = loadRuns();
 if (runs.length === 0) {
   console.error('no run files found in results/');
@@ -195,7 +259,17 @@ const suffix = includeSmoke ? '-smoke' : '';
 const built = new Map();
 for (const [key, groupRuns] of groups) {
   const issuesAll = groupRuns.flatMap((r) => r.issues.map((i) => `${r.raw.id}: ${i}`));
-  built.set(key, { runs: groupRuns, issues: issuesAll, stats: buildGroup(groupRuns) });
+  const xMaxCommon = Math.min(...groupRuns.map((r) => r.raw.xMax));
+  built.set(key, {
+    runs: groupRuns,
+    issues: issuesAll,
+    stats: buildGroup(groupRuns),
+    gaps: {
+      xMaxCommon,
+      real: gapStats(realPrimesFromCounts(primeCountPrefix(xMaxCommon))),
+      runs: groupRuns.map(({ raw }) => ({ id: raw.id, ...gapStats(raw.sequence) }))
+    }
+  });
 }
 
 const analysisOut = {
@@ -212,6 +286,7 @@ for (const [key, g] of built) {
     slope: g.stats.slope,
     final: g.stats.final,
     issues: g.issues,
+    gap: g.gaps,
     runs: g.runs.map(({ raw, issues }) => ({
       id: raw.id,
       seed: raw.seed,
@@ -323,6 +398,17 @@ for (const [key, g] of built) {
   md.push('Average difference curve (pseudo-prime count minus real pi(x)):');
   md.push('');
   md.push(curveTable(g.stats));
+  md.push('');
+  md.push('Gap structure (real primes vs pseudo-prime runs):');
+  md.push('');
+  md.push(gapTable(g.gaps, Math.log(g.gaps.xMaxCommon)));
+  if (g.runs.length > 1 && g.stats.final.std !== null) {
+    const cramer = Math.sqrt(g.stats.final.real);
+    md.push('');
+    md.push(
+      `Fluctuations: cross-seed σ at final x = ${g.stats.final.std.toFixed(0)} vs Cramér Poisson prediction √π(x) = ${cramer.toFixed(0)} (×${(g.stats.final.std / cramer).toFixed(1)})`
+    );
+  }
 }
 md.push('');
 md.push('## Mode comparisons');
