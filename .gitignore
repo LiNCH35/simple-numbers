@@ -26,6 +26,9 @@ coverage
 
 *.tsbuildinfo
 
+# Experiment artifacts (regenerable via scripts/run-experiment.mjs + scripts/analyze-results.mjs)
+results/*.json
+
 .eslintcache
 
 # Cypress
