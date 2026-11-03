@@ -16,6 +16,9 @@ export function useSequenceGeneration(
   const generationTime = ref<number>(0);
   const generationProgress = ref<number>(0);
   const isGenerating = ref<boolean>(false);
+  const progressMode = ref<string>('single');
+  const progressCurrent = ref<number>(0);
+  const progressTotal = ref<number>(0);
 
   function myLog(...args: any[]) {
     if (logs.value) {
@@ -59,25 +62,49 @@ export function useSequenceGeneration(
   }
 
   async function getList(maxSimples: number, showChart: any) {
+    if (isGenerating.value) return;
+
     showChart.value = false;
-    
+
     generationStartTime.value = Date.now();
     generationTime.value = 0;
-    
-    myListOfSimple.value = initialValue;
+
+    myListOfSimple.value = [...initialValue];
     currentNumber.value = myListOfSimple.value[myListOfSimple.value.length - 1] + 1;
-    
+
     resetProbabilityCache();
     calculateProbability();
 
-    do {
-      getNextSimple();
+    const total = Math.max(1, maxSimples - myListOfSimple.value.length);
+    progressMode.value = 'single';
+    progressCurrent.value = 0;
+    progressTotal.value = total;
+    isGenerating.value = true;
+    generationProgress.value = 0;
+
+    const chunkSize = Math.max(1, Math.ceil(total / Math.min(total, 25)));
+    const startedAt = Date.now();
+    const minDurationMs = 400;
+    let generated = 0;
+    while (generated < total) {
+      const chunkStart = Date.now();
+      let chunkNumbers = 0;
+      while (generated < total && chunkNumbers < chunkSize && Date.now() - chunkStart < 32) {
+        getNextSimple();
+        generated++;
+        chunkNumbers++;
+      }
+      progressCurrent.value = generated;
+      generationProgress.value = Math.min(99, (generated / total) * 100);
       await nextTick();
-      await new Promise(resolve => setTimeout(resolve, 100));
-    } while (maxSimples > myListOfSimple.value.length);
-    
+      const scheduled = (generated / total) * minDurationMs;
+      const wait = Math.max(16, scheduled - (Date.now() - startedAt));
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+
+    generationProgress.value = 100;
+    isGenerating.value = false;
     generationTime.value = (Date.now() - generationStartTime.value) / 1000;
-    
     result.value.push(myListOfSimple.value.map((v, i) => [v, i]));
   }
 
@@ -108,6 +135,9 @@ export function useSequenceGeneration(
     generationTime,
     generationProgress,
     isGenerating,
+    progressMode,
+    progressCurrent,
+    progressTotal,
     getNextSimpleByStep,
     getNextSimple,
     isNextSimple,
