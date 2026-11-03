@@ -60,6 +60,23 @@ export function calculateSequenceDifferences(sequence, xMax, xStep = 5) {
 
 export const TWIN_PRIME_CONSTANT = 1.3203236316937392;
 
+function sampleGamma(shape, random) {
+  const normal = () => {
+    return Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
+  };
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    const x = normal();
+    const v = 1 + c * x;
+    if (v <= 0) continue;
+    const v3 = v * v * v;
+    const u = random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v3;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v3 + Math.log(v3))) return d * v3;
+  }
+}
+
 export function createGenerator(options = {}) {
   const {
     seed = 42,
@@ -70,7 +87,10 @@ export function createGenerator(options = {}) {
     mode = 'jump',
     trackProbability = true,
     jumpGap = 'round',
-    twinBias = false
+    twinBias = false,
+    twinRate = 0,
+    gapShape = 1,
+    lattice6 = false
   } = options;
 
   if (mode !== 'jump' && mode !== 'step') {
@@ -100,6 +120,24 @@ export function createGenerator(options = {}) {
   if (twinBias && mode !== 'step') {
     throw new Error('twinBias requires step mode');
   }
+  if (!Number.isFinite(twinRate) || twinRate < 0) {
+    throw new Error(`twinRate must be a non-negative finite number, got: ${twinRate}`);
+  }
+  if (twinRate > 0 && mode !== 'jump') {
+    throw new Error('twinRate requires jump mode');
+  }
+  if (!Number.isFinite(gapShape) || gapShape < 1) {
+    throw new Error(`gapShape must be a finite number >= 1, got: ${gapShape}`);
+  }
+  if (gapShape > 1 && mode !== 'jump') {
+    throw new Error('gapShape requires jump mode');
+  }
+  if (typeof lattice6 !== 'boolean') {
+    throw new Error(`lattice6 must be a boolean, got: ${lattice6}`);
+  }
+  if (lattice6 && mode !== 'jump') {
+    throw new Error('lattice6 requires jump mode');
+  }
 
   const initialList = initial.slice();
   const random = splitmix32(seed);
@@ -118,10 +156,38 @@ export function createGenerator(options = {}) {
   };
 
   const nextJump = () => {
-    if (jumpGap === 'floor') {
-      currentNumber += 1 + Math.floor(-Math.log(1 - random()) * (Math.log(currentNumber) - 0.5));
+    const logX = Math.log(currentNumber);
+    const twinP = twinRate > 0 ? Math.min(twinRate / logX, 0.9) : 0;
+    const restMean = twinP > 0 ? (logX - 2 * twinP) / (1 - twinP) : logX;
+
+    if (lattice6) {
+      const pEff = twinP * 0.65;
+      const first = sequence.length === initialList.length;
+      const last = first ? currentNumber - 1 : currentNumber;
+      if (last < 3) {
+        currentNumber = last + 1;
+      } else if (pEff > 0 && last % 6 === 5 && random() < twinP) {
+        currentNumber = last + 2;
+      } else {
+        const restMeanL = pEff > 0 ? (logX - 2 * pEff) / (1 - pEff) : logX;
+        const mu = restMeanL - 1.4;
+        const base = gapShape > 1 ? sampleGamma(gapShape, random) * (mu / gapShape) : -Math.log(1 - random()) * mu;
+        let gap = Math.max(4, Math.round(base / 2) * 2);
+        if ((last + gap) % 3 === 0) gap += 2;
+        currentNumber = last + gap;
+      }
+      acceptNumber(currentNumber);
+      return;
+    }
+
+    if (twinP > 0 && random() < twinP) {
+      currentNumber += 2;
+    } else if (gapShape > 1) {
+      currentNumber += Math.max(1, Math.round(sampleGamma(gapShape, random) * (restMean / gapShape)));
+    } else if (jumpGap === 'floor') {
+      currentNumber += 1 + Math.floor(-Math.log(1 - random()) * (logX - 0.5));
     } else {
-      currentNumber += Math.max(1, Math.round(-Math.log(1 - random()) * Math.log(currentNumber)));
+      currentNumber += Math.max(1, Math.round(-Math.log(1 - random()) * restMean));
     }
     acceptNumber(currentNumber);
   };

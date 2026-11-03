@@ -29,6 +29,12 @@ export interface ExperimentOverlays {
   sqrtPi: OverlayPoint[] | null;
 }
 
+export interface ExperimentCurveOptions {
+  overlays?: ExperimentOverlays | null;
+  logX?: boolean;
+  yLabel?: string;
+}
+
 function niceStep(range: number, targetTicks: number): number {
   const raw = range / targetTicks;
   if (!Number.isFinite(raw) || raw <= 0) return 1;
@@ -487,7 +493,7 @@ export class ChartRenderer {
     }
   }
 
-  private drawCurveAxisLabels(): void {
+  private drawCurveAxisLabels(yLabel = 'avg diff (pseudo - real)'): void {
     const { ctx, config } = this;
     ctx.fillStyle = '#6f6f6a';
     ctx.font = '11px system-ui, sans-serif';
@@ -496,7 +502,7 @@ export class ChartRenderer {
     ctx.save();
     ctx.translate(15, config.height / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText('avg diff (pseudo - real)', 0, 0);
+    ctx.fillText(yLabel, 0, 0);
     ctx.restore();
   }
 
@@ -504,11 +510,12 @@ export class ChartRenderer {
    * Рисует средние кривые avgDiff по группам эксперимента с полосами ±σ,
    * опционально с теоретическими оверлеями (Li(x)−π(x), ±√π(x)) и лог-шкалой x
    */
-  renderExperimentCurves(curves: ExperimentCurve[], options: { overlays?: ExperimentOverlays | null; logX?: boolean } = {}): void {
+  renderExperimentCurves(curves: ExperimentCurve[], options: ExperimentCurveOptions = {}): void {
     if (curves.length === 0) return;
 
     const logX = options.logX === true;
     const overlays = options.overlays ?? null;
+    const yLabel = options.yLabel ?? 'avg diff (pseudo - real)';
 
     this.ctx.clearRect(0, 0, this.config.width, this.config.height);
 
@@ -564,7 +571,7 @@ export class ChartRenderer {
     if (overlays?.sqrtPi && overlays.sqrtPi.length > 0) {
       this.drawLegendEntry('±√π(x)', '#b9b9b2', legendIndex++);
     }
-    this.drawCurveAxisLabels();
+    this.drawCurveAxisLabels(yLabel);
   }
 
   /**

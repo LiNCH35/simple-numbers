@@ -313,6 +313,24 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+.gap-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+  margin: 0.75rem 0;
+  font-size: 0.8rem;
+}
+
+.gap-compare .check-label {
+  justify-content: flex-start;
+}
+
+.real-compare-note {
+  color: #6f6f6a;
+  font-variant-numeric: tabular-nums;
+}
+
 .gap-section canvas {
   display: block;
   width: 100%;

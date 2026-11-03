@@ -16,7 +16,7 @@ export interface GapAnalysis {
   histogram: GapBar[];
 }
 
-export function analyzeGaps(sequence: number[]): GapAnalysis | null {
+export function analyzeGaps(sequence: number[] | Int32Array): GapAnalysis | null {
   const n = sequence.length - 1;
   if (n <= 0) return null;
 

@@ -116,6 +116,17 @@
               <span>mod6 {{ mod6Shares }}</span>
             </div>
             <canvas ref="gapAnalysisCanvas" width="900" height="260"></canvas>
+            <div class="gap-compare">
+              <label class="check-label">
+                <input type="checkbox" v-model="realCompare">
+                Compare with real primes
+              </label>
+              <span v-if="realComparison" class="real-compare-note">
+                π(x): model {{ realComparison.count }} / real {{ realComparison.pi }} · twinIndex model {{ gapAnalysis?.twinIndex.toFixed(3) }} / real {{ realComparison.gaps.twinIndex.toFixed(3) }} (×{{ realTwinRatio.toFixed(2) }}) · mean {{ gapAnalysis?.meanGap.toFixed(2) }} / {{ realComparison.gaps.meanGap.toFixed(2) }} · mod6 real {{ realMod6Shares }}
+              </span>
+              <span v-else-if="compareNote" class="experiment-note">{{ compareNote }}</span>
+            </div>
+            <canvas v-if="realCompare && realComparison" ref="compareCanvas" width="900" height="300"></canvas>
           </template>
           <p v-else class="experiment-note">Run List or Generate Multiple to see the gap structure.</p>
         </div>
@@ -190,7 +201,8 @@ import { useChartManagement } from '../composables/useChartManagement';
 import { useExperimentAnalysis } from '../composables/useExperimentAnalysis';
 import { analyzeGaps, type GapAnalysis } from '../composables/useGapAnalysis';
 import { usePersistentRef } from '../composables/usePersistentRef';
-import { ChartRenderer, type ExperimentOverlays } from '../utils/chartRenderer';
+import { ChartRenderer, type ExperimentOverlays, type ExperimentCurvePoint } from '../utils/chartRenderer';
+import { primesUpTo } from '../core/real-primes.mjs';
 
 const initialValue = [2, 3];
 const myListOfSimple = ref<number[]>(initialValue);
@@ -327,6 +339,10 @@ async function getListFastWrapper(seedValue?: number) {
 
 const gapAnalysisCanvas = ref<HTMLCanvasElement | null>(null);
 const gapAnalysis = ref<GapAnalysis | null>(null);
+const realCompare = usePersistentRef<boolean>('realCompare', false);
+const realComparison = ref<{ pi: number; count: number; gaps: GapAnalysis; primes: Int32Array } | null>(null);
+const compareCanvas = ref<HTMLCanvasElement | null>(null);
+const compareNote = ref('');
 
 const currentGapSequence = computed<number[] | null>(() => {
   if (multipleSequences.value.length > 1) {
@@ -361,7 +377,76 @@ function drawGapChart() {
   });
 }
 
-watch(currentGapSequence, () => drawGapChart());
+const realMod6Shares = computed(() => {
+  const mod6 = realComparison.value?.gaps.mod6;
+  if (!mod6) return '';
+  return `${mod6.m0.toFixed(1)} / ${mod6.m2.toFixed(1)} / ${mod6.m4.toFixed(1)} %`;
+});
+
+const realTwinRatio = computed(() => {
+  const model = gapAnalysis.value?.twinIndex;
+  const real = realComparison.value?.gaps.twinIndex;
+  if (!model || real === undefined) return 0;
+  return real / model;
+});
+
+function buildCountCurve(sorted: number[] | Int32Array, xs: number[]): ExperimentCurvePoint[] {
+  const points: ExperimentCurvePoint[] = [];
+  let idx = 0;
+  for (const x of xs) {
+    while (idx < sorted.length && sorted[idx] <= x) idx++;
+    points.push({ x, avgDiff: idx, std: null });
+  }
+  return points;
+}
+
+function drawCompareChart() {
+  const canvas = compareCanvas.value;
+  const seq = currentGapSequence.value;
+  const comp = realComparison.value;
+  if (!canvas || !seq || !comp) return;
+  const lo = seq[0];
+  const hi = seq[seq.length - 1];
+  const samples = 100;
+  const xs: number[] = [];
+  for (let i = 0; i < samples; i++) {
+    xs.push(lo + ((hi - lo) * i) / (samples - 1));
+  }
+  const renderer = new ChartRenderer(canvas);
+  renderer.renderExperimentCurves(
+    [
+      { key: 'model', colorIndex: 0, points: buildCountCurve(seq, xs) },
+      { key: 'real primes', colorIndex: 1, points: buildCountCurve(comp.primes, xs) }
+    ],
+    { yLabel: 'count ≤ x' }
+  );
+}
+
+function computeRealComparison() {
+  const seq = currentGapSequence.value;
+  if (!realCompare.value || !seq || seq.length < 3) {
+    realComparison.value = null;
+    compareNote.value = '';
+    return;
+  }
+  const xMax = seq[seq.length - 1];
+  if (xMax > 1e8) {
+    realComparison.value = null;
+    compareNote.value = `sequence x too large for in-browser sieve (x = ${xMax.toLocaleString('en-US')})`;
+    return;
+  }
+  const primes = primesUpTo(xMax);
+  realComparison.value = { pi: primes.length, count: seq.length, gaps: analyzeGaps(primes)!, primes };
+  compareNote.value = '';
+  nextTick(() => drawCompareChart());
+}
+
+watch(currentGapSequence, () => {
+  drawGapChart();
+  computeRealComparison();
+});
+
+watch(realCompare, () => computeRealComparison());
 
 async function generateMultipleSequences() {
   showChart.value = false;
@@ -419,6 +504,7 @@ function handleResize() {
     resizeTimer = undefined;
     drawExperimentChart();
     drawGapChart();
+    drawCompareChart();
     if (!showChart.value) return;
     if (multipleSequences.value.length > 1) drawMultipleSequencesChart();
     else drawDistributionChart(myListOfSimple.value);

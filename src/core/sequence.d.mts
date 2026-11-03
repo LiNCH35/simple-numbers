@@ -38,4 +38,7 @@ export declare function createGenerator(options?: {
   trackProbability?: boolean;
   jumpGap?: 'round' | 'floor';
   twinBias?: boolean;
+  twinRate?: number;
+  gapShape?: number;
+  lattice6?: boolean;
 }): Generator;
