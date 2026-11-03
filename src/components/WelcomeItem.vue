@@ -33,6 +33,10 @@
               <input type="checkbox" v-model="logs">
               Logs
             </label>
+            <label class="check-label">
+              <input type="checkbox" v-model="calibrated">
+              Calibrated (Cramér)
+            </label>
             <label>
               Tolerance:
               <select v-model="tolerance">
@@ -98,21 +102,72 @@
           <p>Run <strong>List</strong> to build the difference distribution.</p>
           <p class="empty-state-hint">Generate Multiple runs several sequences, compares them and shows the average.</p>
         </div>
+
+        <div class="experiment-section">
+          <h3>Experiment Analysis — avg diff vs π(x)</h3>
+          <p v-if="analysisError" class="experiment-error">
+            analysis.json unavailable ({{ analysisError }}). Generate it with scripts/run-experiment.mjs and scripts/analyze-results.mjs.
+          </p>
+          <p v-else-if="analysisLoading" class="experiment-note">Loading analysis.json...</p>
+          <template v-else-if="analysisGroups.length > 0">
+            <div class="experiment-meta">
+              <span>{{ analysisTotalRuns }} runs · generated {{ analysisGeneratedAt }}</span>
+            </div>
+            <div class="experiment-groups">
+              <label v-for="group in analysisGroups" :key="group.key" class="check-label">
+                <input type="checkbox" v-model="experimentVisible[group.key]">
+                {{ group.key }}
+              </label>
+            </div>
+            <div class="experiment-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Group</th>
+                    <th>Runs</th>
+                    <th>x</th>
+                    <th>π(x)</th>
+                    <th>Avg diff</th>
+                    <th>±σ</th>
+                    <th>Rel dev</th>
+                    <th>Slope</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="group in analysisGroups" :key="group.key">
+                    <td>{{ group.key }}</td>
+                    <td>{{ group.runs }}</td>
+                    <td>{{ group.final.x }}</td>
+                    <td>{{ group.final.real }}</td>
+                    <td>{{ formatDiff(group.final.avgDiff) }}</td>
+                    <td>{{ group.final.std === null ? '-' : formatDiff(group.final.std) }}</td>
+                    <td>{{ (group.final.relDev * 100).toFixed(3) }}%</td>
+                    <td>{{ group.slope.toExponential(2) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <canvas ref="experimentChartCanvas" width="900" height="420"></canvas>
+          </template>
+        </div>
       </main>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from "vue";
+import { computed, nextTick, ref, onMounted, onUnmounted, watch } from "vue";
 import { useProbability } from '../composables/useProbability';
 import { useSequenceGeneration } from '../composables/useSequenceGeneration';
 import { useChartManagement } from '../composables/useChartManagement';
+import { useExperimentAnalysis } from '../composables/useExperimentAnalysis';
+import { ChartRenderer } from '../utils/chartRenderer';
 
 const initialValue = [2, 3];
 const myListOfSimple = ref<number[]>(initialValue);
 const currentNumber = ref(initialValue[initialValue.length - 1] + 1);
 const logs = ref(false);
+const calibrated = ref(false);
 const maxSimples = ref(25);
 const tolerance = ref(1e-9);
 const sequenceCount = ref(3);
@@ -150,7 +205,8 @@ const {
   resetProbabilityCache,
   calculateProbability,
   logs,
-  initialValue
+  initialValue,
+  calibrated
 );
 
 // Chart management composable
@@ -169,6 +225,44 @@ const {
 } = useChartManagement();
 
 const length = computed(() => myListOfSimple.value.length);
+
+const {
+  groups: analysisGroups,
+  generatedAt: analysisGeneratedAt,
+  totalRuns: analysisTotalRuns,
+  isLoading: analysisLoading,
+  error: analysisError,
+  loadAnalysis
+} = useExperimentAnalysis();
+
+const experimentVisible = ref<Record<string, boolean>>({});
+const experimentChartCanvas = ref<HTMLCanvasElement | null>(null);
+
+const visibleExperimentCurves = computed(() =>
+  analysisGroups.value
+    .filter((group) => experimentVisible.value[group.key] !== false)
+    .map((group) => ({ key: group.key, colorIndex: group.colorIndex, points: group.points }))
+);
+
+function formatDiff(value: number): string {
+  return Math.round(value).toLocaleString('en-US');
+}
+
+function drawExperimentChart() {
+  const canvas = experimentChartCanvas.value;
+  if (!canvas) return;
+  const curves = visibleExperimentCurves.value;
+  if (curves.length === 0) return;
+  const width = canvas.clientWidth || canvas.width;
+  if (width > 0) {
+    canvas.width = Math.round(width);
+    canvas.height = 420;
+  }
+  const renderer = new ChartRenderer(canvas);
+  renderer.renderExperimentCurves(curves);
+}
+
+watch(experimentVisible, () => drawExperimentChart(), { deep: true });
 
 async function getListWrapper() {
   await getList(maxSimples.value, showChart);
@@ -229,13 +323,26 @@ function handleResize() {
   if (resizeTimer !== undefined) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     resizeTimer = undefined;
+    drawExperimentChart();
     if (!showChart.value) return;
     if (multipleSequences.value.length > 1) drawMultipleSequencesChart();
     else drawDistributionChart(myListOfSimple.value);
   }, 150);
 }
 
-onMounted(() => window.addEventListener('resize', handleResize));
+onMounted(async () => {
+  window.addEventListener('resize', handleResize);
+  const loaded = await loadAnalysis();
+  if (loaded) {
+    const visibility: Record<string, boolean> = {};
+    analysisGroups.value.forEach((group) => {
+      visibility[group.key] = true;
+    });
+    experimentVisible.value = visibility;
+    await nextTick();
+    drawExperimentChart();
+  }
+});
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
   if (resizeTimer !== undefined) clearTimeout(resizeTimer);

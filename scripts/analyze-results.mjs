@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { primeCountPrefix } from '../src/core/sequence.mjs';
@@ -362,6 +362,13 @@ for (const [shape, members] of byShape) {
 }
 analysisOut.comparisons = comparisons.map(({ sample, ...rest }) => rest);
 writeFileSync(path.join(resultsDir, `analysis${suffix}.json`), JSON.stringify(analysisOut));
+
+const publicDir = path.join(__dirname, '..', 'public');
+mkdirSync(publicDir, { recursive: true });
+writeFileSync(path.join(publicDir, `analysis${suffix}.json`), JSON.stringify(analysisOut));
+if (!includeSmoke) {
+  writeFileSync(path.join(publicDir, 'analysis.json'), JSON.stringify(analysisOut));
+}
 
 const md = [];
 md.push(`# Experiment analysis (${analysisOut.generatedAt})`);
