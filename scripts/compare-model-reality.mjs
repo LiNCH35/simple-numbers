@@ -23,7 +23,9 @@ const modes = [
   { id: 'jump-corr', mode: 'jump', twinRate: 0.8, gapShape: 1.5 },
   { id: 'jump-twin-2C2', mode: 'jump', twinRate: TWIN_PRIME_CONSTANT },
   { id: 'jump-lattice', mode: 'jump', lattice6: true },
-  { id: 'jump-lattice-corr', mode: 'jump', lattice6: true, twinRate: 2.1, gapShape: 1.45 }
+  { id: 'jump-lattice-corr', mode: 'jump', lattice6: true, twinRate: 2.1, gapShape: 1.45 },
+  { id: 'jump-lattice30', mode: 'jump', lattice30: true },
+  { id: 'jump-lattice30-corr', mode: 'jump', lattice30: true, twinRate: 3.4, gapShape: 1.4 }
 ];
 
 function gapStats(sequence) {
@@ -122,6 +124,7 @@ for (const config of modes) {
       twinRate: config.twinRate ?? 0,
       gapShape: config.gapShape ?? 1,
       lattice6: config.lattice6 === true,
+      lattice30: config.lattice30 === true,
       trackProbability: false
     });
     const { sequence } = generator.generate(n);

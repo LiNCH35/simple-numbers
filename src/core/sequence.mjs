@@ -90,7 +90,8 @@ export function createGenerator(options = {}) {
     twinBias = false,
     twinRate = 0,
     gapShape = 1,
-    lattice6 = false
+    lattice6 = false,
+    lattice30 = false
   } = options;
 
   if (mode !== 'jump' && mode !== 'step') {
@@ -138,6 +139,15 @@ export function createGenerator(options = {}) {
   if (lattice6 && mode !== 'jump') {
     throw new Error('lattice6 requires jump mode');
   }
+  if (typeof lattice30 !== 'boolean') {
+    throw new Error(`lattice30 must be a boolean, got: ${lattice30}`);
+  }
+  if (lattice30 && mode !== 'jump') {
+    throw new Error('lattice30 requires jump mode');
+  }
+  if (lattice6 && lattice30) {
+    throw new Error('lattice6 and lattice30 are mutually exclusive');
+  }
 
   const initialList = initial.slice();
   const random = splitmix32(seed);
@@ -159,6 +169,26 @@ export function createGenerator(options = {}) {
     const logX = Math.log(currentNumber);
     const twinP = twinRate > 0 ? Math.min(twinRate / logX, 0.9) : 0;
     const restMean = twinP > 0 ? (logX - 2 * twinP) / (1 - twinP) : logX;
+
+    if (lattice30) {
+      const pEff = twinP * 0.43;
+      const first = sequence.length === initialList.length;
+      const last = first ? currentNumber - 1 : currentNumber;
+      if (last < 7) {
+        currentNumber = last === 2 ? 3 : last === 3 ? 5 : 7;
+      } else if (pEff > 0 && (last % 30 === 29 || last % 30 === 11 || last % 30 === 17) && random() < twinP) {
+        currentNumber = last + 2;
+      } else {
+        const restMeanL = pEff > 0 ? (logX - 2 * pEff) / (1 - pEff) : logX;
+        const mu = restMeanL - 1.4;
+        const base = gapShape > 1 ? sampleGamma(gapShape, random) * (mu / gapShape) : -Math.log(1 - random()) * mu;
+        let gap = Math.max(4, Math.round(base / 2) * 2);
+        while ((last + gap) % 3 === 0 || (last + gap) % 5 === 0) gap += 2;
+        currentNumber = last + gap;
+      }
+      acceptNumber(currentNumber);
+      return;
+    }
 
     if (lattice6) {
       const pEff = twinP * 0.65;

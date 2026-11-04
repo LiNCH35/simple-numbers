@@ -41,4 +41,5 @@ export declare function createGenerator(options?: {
   twinRate?: number;
   gapShape?: number;
   lattice6?: boolean;
+  lattice30?: boolean;
 }): Generator;

@@ -1,21 +1,24 @@
 {
   "name": "simple-numbers",
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "cli": "node scripts/cli.mjs"
   },
   "dependencies": {
-    "vue": "^3.5.26",
-    "gpu.js": "^2.16.0"
+    "gpu.js": "^2.16.0",
+    "vue": "^3.5.26"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.3",
     "sass-embedded": "^1.97.3",
     "vite": "^7.3.1",
-    "vite-plugin-vue-devtools": "^8.0.5"
+    "vite-plugin-vue-devtools": "^8.0.5",
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

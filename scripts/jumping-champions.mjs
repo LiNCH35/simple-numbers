@@ -14,7 +14,8 @@ const n = quick ? 200000 : 2000000;
 const modelConfigs = [
   { id: 'jump', opts: { mode: 'jump' } },
   { id: 'jump-lattice', opts: { mode: 'jump', lattice6: true } },
-  { id: 'jump-lattice-corr', opts: { mode: 'jump', lattice6: true, twinRate: 2.1, gapShape: 1.45 } }
+  { id: 'jump-lattice-corr', opts: { mode: 'jump', lattice6: true, twinRate: 2.1, gapShape: 1.45 } },
+  { id: 'jump-lattice30-corr', opts: { mode: 'jump', lattice30: true, twinRate: 3.4, gapShape: 1.4 } }
 ];
 
 function singularSeries(g) {
