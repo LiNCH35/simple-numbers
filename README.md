@@ -34,6 +34,9 @@ simple-numbers/
 │   ├── run-experiment.mjs           # Матрица прогонов, rich JSON в results/ (--quick для смоука)
 │   ├── analyze-results.mjs          # Средние кривые ±σ, сравнения режимов → analysis.json/md
 │   ├── compare-model-reality.mjs    # Модель vs реальные простые → results/model-vs-reality.md
+│   ├── generalization.mjs           # Перенос (κ,k) между масштабами 1e6/3.2e7/1e9 → results/generalization.md
+│   ├── article-data.mjs             # Данные статьи: решето 1e8 + 4 конфигурации × 10 сидов, пары по сидам, ρ₁-бутстрап
+│   ├── make-figures.mjs             # SVG-фигуры статьи → article/figures/
 │   ├── jumping-champions.mjs        # Чемпионы промежутков, пары, сингулярный ряд → jumping-champions.md
 │   └── model-divergences.mjs        # Дивергенции второго плана → model-divergences.md
 ├── tests/
@@ -41,6 +44,7 @@ simple-numbers/
 ├── results/
 │   ├── analysis.md                  # Сводка последнего эксперимента (коммитится)
 │   ├── model-vs-reality.md          # Сравнение модели с реальными простыми (коммитится)
+│   ├── generalization.md            # Перенос параметров между масштабами (коммитится)
 │   ├── jumping-champions.md         # Чемпионы промежутков и сингулярный ряд (коммитится)
 │   └── model-divergences.md         # Автокорреляции, переходы цифр, рекорды (коммитится)
 │   ├── analysis.json                # Машиночитаемые кривые и сравнения (в .gitignore)
@@ -217,7 +221,7 @@ P = 1 − (1/2 + 1/3 − 1/(2×3))
 
 Каждый следующий уровень требует корреляций следующего порядка: правила промежутков и конечные решётки вычетов закрывают уровни 1–4 и частично 5–6; полный сингулярный ряд Харди–Литтлвуда (произведения по всем малым простым) конечными правилами промежутков не достигается.
 
-Подробности и полные таблицы — `results/model-vs-reality.md`, `results/jumping-champions.md` и `results/model-divergences.md`. Связный пересказ с графиками — статья [`article/ARTICLE.md`](article/ARTICLE.md) (данные: `node scripts/article-data.mjs` → `results/article-data.json`, решето до 10⁸ + 4 конфигурации × 10 сидов; фигуры: `node scripts/make-figures.mjs` → `article/figures/`).
+Подробности и полные таблицы — `results/model-vs-reality.md`, `results/jumping-champions.md` и `results/model-divergences.md`. Связный пересказ с графиками — статья [`article/ARTICLE.md`](article/ARTICLE.md) (данные: `node scripts/article-data.mjs` → `results/article-data.json`; фигуры: `node scripts/make-figures.mjs`; валидация переноса: `node scripts/generalization.mjs` — решето до 10⁹, формальный фит κ/k бисекцией + координатным спуском, матрица переносов 10⁶/3.2·10⁷/10⁹). Итог валидации: параметры локальны по масштабу — twinIndex реальных масштабно-инвариантен (≈2C₂), дисперсия растёт с x (0.651 → 0.727 → 0.753), поэтому k ≈ 1/disp(x) «плывёт» с диапазоном; κ≈0.8 переносится, k — нет. Детрендированная антикорреляция промежутков реальных (ρ₁det ≈ −0.031…−0.055, бутстрап-CI не накрывает нуль) не воспроизводится ни одной конфигурацией (модели ≈ 0).
 
 Тесты ядра (`npm test`, vitest): 23 проверки — детерминизм-регрессия эталонных прогонов, точные π(x) и максимальный промежуток решета, измеренные мишени всех исследовательских режимов, инварианты решёток — любое изменение ядра сверяется с реальными простыми за ~90 секунд.
 

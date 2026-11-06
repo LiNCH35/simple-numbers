@@ -104,6 +104,12 @@ const fmtK = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M` : v >=
     const x = xMap(xs[i]);
     s += `<line x1="${x}" y1="${yMap(Math.sqrt(xs[i]))}" x2="${x}" y2="${yMap(-Math.sqrt(xs[i]))}" stroke="${colors.band}" stroke-width="1" opacity="0.5"/>`;
   }
+  const spread = data.curveSpread && data.curveSpread['jump-corr'];
+  if (spread) {
+    for (let m = 1; m < spread.models.length; m++) {
+      s += polyline(xs, spread.models[m].map((v, i) => v - data.curves['jump-corr'].real[i]), xMap, yMap, colors['jump-corr'], 0.8, '').replace('/>', ` opacity="0.22"/>`);
+    }
+  }
   s += axes(xTicks, yTicks, xMap, yMap, fmtK, (v) => v.toString(), 'x', 'Δ(x), чисел');
   s += polyline(xs, data.curves.jump.model.map((v, i) => v - data.curves.jump.real[i]), xMap, yMap, colors.jump);
   s += polyline(xs, data.curves['jump-corr'].model.map((v, i) => v - data.curves['jump-corr'].real[i]), xMap, yMap, colors['jump-corr']);
@@ -111,7 +117,7 @@ const fmtK = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M` : v >=
   s += polyline([curveFrom, xMax], [0, 0], xMap, yMap, '#1c1c1a', 1, '4,4');
   s += legend([
     { color: colors.jump, label: modelLabel.jump },
-    { color: colors['jump-corr'], label: modelLabel['jump-corr'] },
+    { color: colors['jump-corr'], label: modelLabel['jump-corr'] + (spread ? ' + 9 сидов (прозр.)' : '') },
     { color: colors['jump-lattice30-corr'], label: modelLabel['jump-lattice30-corr'] },
     { color: colors.band, label: '±√π(x)' }
   ], 1);
@@ -178,23 +184,31 @@ const fmtK = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M` : v >=
 {
   const sRatio = data.constants.sRatio306;
   const entries = [
-    { label: 'реальные', ratio: data.real.pairs[30] / data.real.pairs[6], color: '#1c1c1a' },
-    { label: 'jump', ratio: data.pairModels.jump.pairs[30] / data.pairModels.jump.pairs[6], color: colors.jump },
-    { label: 'lattice6-corr', ratio: data.pairModels['jump-lattice6-corr'].pairs[30] / data.pairModels['jump-lattice6-corr'].pairs[6], color: colors['jump-lattice6-corr'] },
-    { label: 'lattice30-corr', ratio: data.pairModels['jump-lattice30-corr'].pairs[30] / data.pairModels['jump-lattice30-corr'].pairs[6], color: colors['jump-lattice30-corr'] }
+    { label: 'реальные', ratio: data.real.pairs[30] / data.real.pairs[6], sd: 0, color: '#1c1c1a' },
+    { label: 'jump', ratio: data.pairModels.jump.ratio.mean, sd: data.pairModels.jump.ratio.sd, color: colors.jump },
+    { label: 'jump-corr', ratio: data.pairModels['jump-corr'].ratio.mean, sd: data.pairModels['jump-corr'].ratio.sd, color: colors['jump-corr'] },
+    { label: 'lattice30-corr', ratio: data.pairModels['jump-lattice30-corr'].ratio.mean, sd: data.pairModels['jump-lattice30-corr'].ratio.sd, color: colors['jump-lattice30-corr'] }
   ];
-  const yMax = Math.max(...entries.map((e) => e.ratio), sRatio) * 1.2;
+  const yMax = Math.max(...entries.map((e) => e.ratio + e.sd), sRatio) * 1.2;
   const slot = plotW / entries.length;
   const yMap = (v) => M.t + plotH - (v / yMax) * plotH;
   const yTicks = niceTicks(0, yMax, 6).ticks;
-  let s = svgHeader('Отношение пар (p, p+30) / (p, p+6): реальность, модели, предсказание 𝔖');
+  let s = svgHeader('Отношение пар (p, p+30) / (p, p+6): реальность, модели (mean ± sd, 10 сидов), 𝔖');
   s += axes([], yTicks, (v) => v, yMap, () => '', (v) => v.toFixed(2), '', 'пары 30 / пары 6');
   entries.forEach((e, i) => {
     const x0 = M.l + i * slot + slot * 0.14;
     const bw = slot * 0.72;
     const bh = plotH - (yMap(e.ratio) - M.t);
     s += `<rect x="${x0}" y="${yMap(e.ratio)}" width="${bw}" height="${bh}" fill="${e.color}"/>`;
-    s += `<text x="${x0 + bw / 2}" y="${yMap(e.ratio) - 6}" text-anchor="middle" font-size="11" fill="#333">${e.ratio.toFixed(3)}</text>`;
+    if (e.sd > 0) {
+      const cx = x0 + bw / 2;
+      const yLo = yMap(e.ratio - e.sd);
+      const yHi = yMap(e.ratio + e.sd);
+      s += `<line x1="${cx}" y1="${yHi}" x2="${cx}" y2="${yLo}" stroke="#1c1c1a" stroke-width="1.2"/>`
+        + `<line x1="${cx - 8}" y1="${yHi}" x2="${cx + 8}" y2="${yHi}" stroke="#1c1c1a" stroke-width="1.2"/>`
+        + `<line x1="${cx - 8}" y1="${yLo}" x2="${cx + 8}" y2="${yLo}" stroke="#1c1c1a" stroke-width="1.2"/>`;
+    }
+    s += `<text x="${x0 + bw / 2}" y="${yMap(e.ratio + e.sd) - 6}" text-anchor="middle" font-size="11" fill="#333">${e.ratio.toFixed(3)}${e.sd > 0 ? ` ± ${e.sd.toFixed(3)}` : ''}</text>`;
     s += `<text x="${x0 + bw / 2}" y="${M.t + plotH + 18}" text-anchor="middle" font-size="11" fill="#6f6f6a">${e.label}</text>`;
   });
   s += `<line x1="${M.l}" y1="${yMap(sRatio)}" x2="${M.l + plotW}" y2="${yMap(sRatio)}" stroke="#4f7d4f" stroke-dasharray="6,4"/>`;

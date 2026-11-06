@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { createGenerator, TWIN_PRIME_CONSTANT, isPrime } from '../src/core/sequence.mjs';
+import { createGenerator, TWIN_PRIME_CONSTANT, isPrime, splitmix32 } from '../src/core/sequence.mjs';
 import { primesUpTo } from '../src/core/real-primes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +77,84 @@ function autocorr(gaps) {
   const c1 = p1 / (count - 1) - ((sum - gaps[0]) / (count - 1)) * ((sum - gaps[count - 1]) / (count - 1));
   const c2 = p2 / (count - 2) - ((sum - gaps[0] - gaps[1]) / (count - 2)) * ((sum - gaps[count - 2] - gaps[count - 1]) / (count - 2));
   return { rho1: c1 / variance, rho2: c2 / variance, mean };
+}
+
+function rho1Of(v) {
+  const n = v.length;
+  let lag = 0;
+  let sum = 0;
+  let sum2 = 0;
+  for (let i = 0; i < n; i++) {
+    sum += v[i];
+    sum2 += v[i] * v[i];
+    if (i > 0) lag += v[i - 1] * v[i];
+  }
+  const mean = sum / n;
+  const variance = sum2 / n - mean * mean;
+  const c1 = lag / (n - 1) - ((sum - v[0]) / (n - 1)) * ((sum - v[n - 1]) / (n - 1));
+  return c1 / variance;
+}
+
+function detrendedResiduals(seq, xMax, bins = 20) {
+  const nG = seq.length - 1;
+  const logTl = Math.log(xMax);
+  const binOf = (x) => Math.max(0, Math.min(bins - 1, Math.floor((bins * Math.log(x)) / logTl)));
+  const gaps = new Float64Array(nG);
+  const binsIdx = new Int32Array(nG);
+  const binSum = new Float64Array(bins);
+  const binCnt = new Float64Array(bins);
+  for (let i = 1; i < seq.length; i++) {
+    const g = seq[i] - seq[i - 1];
+    const b = binOf(seq[i - 1]);
+    gaps[i - 1] = g;
+    binsIdx[i - 1] = b;
+    binSum[b] += g;
+    binCnt[b] += 1;
+  }
+  const binMean = new Float64Array(bins);
+  for (let b = 0; b < bins; b++) binMean[b] = binCnt[b] > 0 ? binSum[b] / binCnt[b] : 0;
+  const resid = new Float64Array(nG);
+  for (let i = 0; i < nG; i++) resid[i] = gaps[i] - binMean[binsIdx[i]];
+  return resid;
+}
+
+function rho1DetrendedOf(seq, xMax) {
+  return rho1Of(detrendedResiduals(seq, xMax));
+}
+
+function blockBootstrapCi(values, blockLen, resamples, rnd) {
+  const n = values.length;
+  const res = new Float64Array(n);
+  const rhos = new Float64Array(resamples);
+  for (let b = 0; b < resamples; b++) {
+    let pos = 0;
+    while (pos < n) {
+      const start = Math.floor(rnd() * (n - blockLen));
+      const take = Math.min(blockLen, n - pos);
+      for (let j = 0; j < take; j++) res[pos + j] = values[start + j];
+      pos += take;
+    }
+    rhos[b] = rho1Of(res);
+  }
+  const sorted = Array.from(rhos).sort((a, b) => a - b);
+  return { lo: sorted[Math.floor(0.025 * resamples)], hi: sorted[Math.ceil(0.975 * resamples) - 1] };
+}
+
+function meanSd(values) {
+  const m = values.reduce((s, v) => s + v, 0) / values.length;
+  const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / values.length);
+  return { mean: m, sd };
+}
+
+function countsAt(xs, seq) {
+  let im = 0;
+  const out = new Array(xs.length);
+  for (let s = 0; s < xs.length; s++) {
+    const x = xs[s];
+    while (im < seq.length && seq[im] <= x) im++;
+    out[s] = im;
+  }
+  return out;
 }
 
 function digitDiag(seq) {
@@ -190,6 +268,12 @@ const real = primesUpTo(xBig);
 const realGaps = gapsOf(real);
 const realShares = gapShares(realGaps, xBig);
 const realAutocorr = autocorr(realGaps);
+const realResid = detrendedResiduals(real, xBig);
+const realRho1Det = rho1Of(realResid);
+const bootRnd = splitmix32(20261106);
+const bootB = quick ? 50 : 200;
+const realRho1Ci = blockBootstrapCi(realGaps, 50000, bootB, bootRnd);
+const realRho1DetCi = blockBootstrapCi(realResid, 50000, bootB, bootRnd);
 const realMod6 = mod6Shares(real);
 const realDiag = digitDiag(real);
 const realTwin = twinIndex(real);
@@ -235,28 +319,43 @@ const evolution = [];
 
 const pairModels = {};
 for (const config of modelConfigs) {
-  const seq = createGenerator({ seed: 1, tolerance: 1e-10, trackProbability: false, ...config.opts }).generate(n).sequence;
-  const xMax = seq[seq.length - 1];
-  const bits = new Uint8Array(Math.ceil((xMax + 40) / 8));
-  for (const p of seq) bits[p >> 3] |= 1 << (p & 7);
-  const isP = (v) => (bits[v >> 3] & (1 << (v & 7))) !== 0;
-  const pairs = {};
-  for (const g of pairGaps) {
-    let c = 0;
-    for (let i = 0; i < seq.length; i++) {
-      const p = seq[i];
-      if (p + g > xMax) break;
-      if (isP(p + g)) c++;
+  const perSeed = [];
+  for (const seed of seeds) {
+    const seq = createGenerator({ seed, tolerance: 1e-10, trackProbability: false, ...config.opts }).generate(n).sequence;
+    const xMax = seq[seq.length - 1];
+    const bits = new Uint8Array(Math.ceil((xMax + 40) / 8));
+    for (const p of seq) bits[p >> 3] |= 1 << (p & 7);
+    const isP = (v) => (bits[v >> 3] & (1 << (v & 7))) !== 0;
+    const pairs = {};
+    for (const g of pairGaps) {
+      let c = 0;
+      for (let i = 0; i < seq.length; i++) {
+        const p = seq[i];
+        if (p + g > xMax) break;
+        if (isP(p + g)) c++;
+      }
+      pairs[g] = c;
     }
-    pairs[g] = c;
+    const counts = new Map();
+    const g = gapsOf(seq);
+    for (const x of g) counts.set(x, (counts.get(x) ?? 0) + 1);
+    const shares = {};
+    for (let gg = 2; gg <= 60; gg += 2) shares[gg] = (100 * (counts.get(gg) ?? 0)) / g.length;
+    perSeed.push({ pairs, shares, xMax });
   }
-  const counts = new Map();
-  const g = gapsOf(seq);
-  for (const x of g) counts.set(x, (counts.get(x) ?? 0) + 1);
+  const pairs = {};
+  const pairsSd = {};
+  for (const g of pairGaps) {
+    const agg = meanSd(perSeed.map((r) => r.pairs[g]));
+    pairs[g] = agg.mean;
+    pairsSd[g] = agg.sd;
+  }
   const shares = {};
-  for (let gg = 2; gg <= 60; gg += 2) shares[gg] = (100 * (counts.get(gg) ?? 0)) / g.length;
-  pairModels[config.id] = { pairs, xMax, shares };
-  console.log(`pairs ${config.id}: 30/6 = ${(pairs[30] / pairs[6]).toFixed(3)} (xMax ${xMax})`);
+  for (let gg = 2; gg <= 60; gg += 2) shares[gg] = perSeed.reduce((s, r) => s + r.shares[gg], 0) / perSeed.length;
+  const ratio = meanSd(perSeed.map((r) => r.pairs[30] / r.pairs[6]));
+  const xMax = meanSd(perSeed.map((r) => r.xMax));
+  pairModels[config.id] = { pairs, pairsSd, shares, ratio, xMax: xMax.mean };
+  console.log(`pairs ${config.id}: 30/6 = ${ratio.mean.toFixed(3)}±${ratio.sd.toFixed(3)} (${seeds.length} seeds, xMax ${xMax.mean.toFixed(0)})`);
 }
 
 const perConfig = {};
@@ -284,6 +383,7 @@ for (const config of modelConfigs) {
       dispersion: dispersion(seq),
       mod6: mod6Shares(seq),
       rho1: autocorr(g).rho1,
+      rho1Det: rho1DetrendedOf(seq, xMax),
       diagBias: digitDiag(seq),
       maxGap,
       nMinusPi: pi === null ? null : n - pi
@@ -300,6 +400,7 @@ for (const config of modelConfigs) {
     twinIndex: agg('twinIndex'),
     dispersion: agg('dispersion'),
     rho1: agg('rho1'),
+    rho1Det: agg('rho1Det'),
     diagBias: agg('diagBias'),
     maxGap: agg('maxGap'),
     nMinusPi: agg('nMinusPi'),
@@ -318,6 +419,17 @@ for (const config of modelConfigs) {
   curveModels[config.id] = countCurve(seq, real, seq[seq.length - 1]);
 }
 
+const spreadConfig = 'jump-corr';
+const spreadXs = curveModels[spreadConfig].xs;
+const spreadModels = [curveModels[spreadConfig].model];
+for (const seed of seeds) {
+  if (seed === 1) continue;
+  const opts = modelConfigs.find((c) => c.id === spreadConfig).opts;
+  const seq = createGenerator({ seed, tolerance: 1e-10, trackProbability: false, ...opts }).generate(n).sequence;
+  spreadModels.push(countsAt(spreadXs, seq));
+}
+const curveSpread = { [spreadConfig]: { xs: spreadXs, models: spreadModels } };
+
 const out = {
   generatedAt: new Date().toISOString(),
   quick,
@@ -329,7 +441,10 @@ const out = {
     championShare: realShares.championShare,
     shares: realShares.shares,
     rho1: realAutocorr.rho1,
+    rho1Ci: realRho1Ci,
     rho2: realAutocorr.rho2,
+    rho1Det: realRho1Det,
+    rho1DetCi: realRho1DetCi,
     meanGap: realAutocorr.mean,
     diagBias: realDiag,
     twinIndex: realTwin,
@@ -343,6 +458,7 @@ const out = {
   modelShares: Object.fromEntries(Object.entries(pairModels).map(([id, v]) => [id, v.shares])),
   pairModels,
   curves: curveModels,
+  curveSpread,
   constants: { twinPrimeConstant: TWIN_PRIME_CONSTANT, sRatio306: singularSeries(30) / singularSeries(6) }
 };
 
