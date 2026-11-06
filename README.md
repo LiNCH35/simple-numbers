@@ -45,6 +45,9 @@ simple-numbers/
 │   └── model-divergences.md         # Автокорреляции, переходы цифр, рекорды (коммитится)
 │   ├── analysis.json                # Машиночитаемые кривые и сравнения (в .gitignore)
 │   └── run-*.json                   # Прогоны: sequence + points + stats (в .gitignore)
+├── article/
+│   ├── ARTICLE.md                   # Статья «Псевдопростые: что модель Крамера умеет, а что нет»
+│   └── figures/                     # fig1–fig5 (SVG, генерируются scripts/make-figures.mjs)
 ├── src/
 │   ├── core/                      # Ядро, общее для Node и браузера
 │   │   ├── probability.mjs        # ProbabilityCalculator: сумма включения-исключения
@@ -214,7 +217,7 @@ P = 1 − (1/2 + 1/3 − 1/(2×3))
 
 Каждый следующий уровень требует корреляций следующего порядка: правила промежутков и конечные решётки вычетов закрывают уровни 1–4 и частично 5–6; полный сингулярный ряд Харди–Литтлвуда (произведения по всем малым простым) конечными правилами промежутков не достигается.
 
-Подробности и полные таблицы — `results/model-vs-reality.md`, `results/jumping-champions.md` и `results/model-divergences.md`.
+Подробности и полные таблицы — `results/model-vs-reality.md`, `results/jumping-champions.md` и `results/model-divergences.md`. Связный пересказ с графиками — статья [`article/ARTICLE.md`](article/ARTICLE.md) (данные: `node scripts/article-data.mjs` → `results/article-data.json`, решето до 10⁸ + 4 конфигурации × 10 сидов; фигуры: `node scripts/make-figures.mjs` → `article/figures/`).
 
 Тесты ядра (`npm test`, vitest): 23 проверки — детерминизм-регрессия эталонных прогонов, точные π(x) и максимальный промежуток решета, измеренные мишени всех исследовательских режимов, инварианты решёток — любое изменение ядра сверяется с реальными простыми за ~90 секунд.
 
