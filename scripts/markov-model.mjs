@@ -230,8 +230,9 @@ function pairsOf(seq, X, cutoffs) {
 }
 
 function meanSd(values) {
-  const m = values.reduce((s, v) => s + v, 0) / values.length;
-  const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / values.length);
+  const n = values.length;
+  const m = values.reduce((s, v) => s + v, 0) / n;
+  const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / (n - 1));
   return { mean: m, sd };
 }
 

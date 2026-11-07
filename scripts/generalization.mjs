@@ -132,7 +132,8 @@ function bootstrapRhoCi(values, rnd) {
 }
 
 function modelStats(opts, n, seed, limit) {
-  const seq = gen(opts, n, seed);
+  const nGen = limit === undefined ? n : n + Math.ceil(6 * Math.sqrt(n));
+  const seq = gen(opts, nGen, seed);
   const xMax = seq[seq.length - 1];
   const s = fullStats(seq, limit, limit === undefined ? xMax : limit);
   return { xMax, ...s };
@@ -150,10 +151,13 @@ function piAt(primes, x) {
 }
 
 function meanSd(values) {
-  const m = values.reduce((s, v) => s + v, 0) / values.length;
-  const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / values.length);
-  const se = sd / Math.sqrt(values.length);
-  return { mean: m, sd, se, ciLo: m - 1.96 * se, ciHi: m + 1.96 * se };
+  const n = values.length;
+  const tTable = { 2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262 };
+  const t = tTable[n] ?? 1.96;
+  const m = values.reduce((s, v) => s + v, 0) / n;
+  const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / (n - 1));
+  const se = sd / Math.sqrt(n);
+  return { mean: m, sd, se, ciLo: m - t * se, ciHi: m + t * se, t };
 }
 
 function fitCorr(X, piCount, real, fitSeeds, bisectIters, maxRounds, tag) {
