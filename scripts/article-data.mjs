@@ -143,9 +143,12 @@ function blockBootstrapCi(values, blockLen, resamples, rnd) {
 
 function meanSd(values) {
   const n = values.length;
+  const tTable = { 2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262 };
+  const t = tTable[n] ?? 1.96;
   const m = values.reduce((s, v) => s + v, 0) / n;
   const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / (n - 1));
-  return { mean: m, sd };
+  const se = sd / Math.sqrt(n);
+  return { mean: m, sd, se, ciLo: m - t * se, ciHi: m + t * se, t };
 }
 
 function countsAt(xs, seq) {
@@ -443,9 +446,13 @@ for (const config of modelConfigs) {
   }
   const agg = (key, sub) => {
     const values = runs.map((r) => (sub === undefined ? r[key] : r[key][sub]));
-    const m = values.reduce((s, v) => s + v, 0) / values.length;
-    const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / (values.length - 1));
-    return { mean: m, sd };
+    const n = values.length;
+    const tTable = { 2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262 };
+    const t = tTable[n] ?? 1.96;
+    const m = values.reduce((s, v) => s + v, 0) / n;
+    const sd = Math.sqrt(values.reduce((s2, v) => s2 + (v - m) * (v - m), 0) / (n - 1));
+    const se = sd / Math.sqrt(n);
+    return { mean: m, sd, se, ciLo: m - t * se, ciHi: m + t * se, t };
   };
   perConfig[config.id] = {
     seeds: seeds.length,

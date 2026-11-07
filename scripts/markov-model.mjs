@@ -12,17 +12,16 @@ const X_FIT = 30000000;
 const X_PAIRS = [1000000, 10000000, 30000000];
 const pairGaps = [2, 4, 6, 8, 10, 12, 30];
 const BINS = 20;
-const fitSeeds = [1, 2, 3];
-const valSeeds = quick ? [1, 2] : [1, 2, 3, 4, 5];
-const transferSeeds = [1, 2, 3];
+const fitSeeds = [101, 102, 103, 104, 105];
+const valSeeds = quick ? [201, 202] : [201, 202, 203, 204, 205, 206, 207, 208, 209, 210];
+const transferSeeds = [301, 302, 303, 304, 305];
 const ALLOWED30 = [1, 7, 11, 13, 17, 19, 23, 29];
 const TWIN_CLASSES = [11, 17, 29];
 
-function gammaSample(rnd, shape, mean) {
-  const scale = mean / shape;
+function gammaByShape(rnd, shape, scale) {
   if (shape < 1) {
     const u = rnd();
-    return gammaSample(rnd, shape + 1, mean) * Math.pow(u, 1 / shape);
+    return gammaByShape(rnd, shape + 1, scale) * Math.pow(u, 1 / shape);
   }
   const d = shape - 1 / 3;
   const c = 1 / Math.sqrt(9 * d);
@@ -37,6 +36,10 @@ function gammaSample(rnd, shape, mean) {
     if (u < 1 - 0.0331 * z * z * z * z) return d * v * scale;
     if (Math.log(u) < 0.5 * z * z + d * (1 - v + Math.log(v))) return d * v * scale;
   }
+}
+
+function gammaSample(rnd, shape, mean) {
+  return gammaByShape(rnd, shape, mean / shape);
 }
 
 function nearestAllowed(x, gRaw) {
@@ -139,6 +142,7 @@ function singularSeries(g) {
 
 function statsOf(seq, X) {
   let n = 0;
+  let nG = 0;
   let sum = 0;
   let sum2 = 0;
   let twin = 0;
@@ -172,6 +176,7 @@ function statsOf(seq, X) {
       continue;
     }
     const g = p - seq[i - 1];
+    nG++;
     sum += g;
     sum2 += g * g;
     if (g === 2) twin++;
@@ -184,18 +189,19 @@ function statsOf(seq, X) {
     }
     prevWasTwin = g === 2;
   }
-  const mean = sum / n;
-  const variance = sum2 / n - mean * mean;
+  const mean = sum / nG;
+  const variance = sum2 / nG - mean * mean;
   const rho1det = rho1Of(detrendedResiduals(seq, X));
   const avgDrift4 = drift4.reduce((s, v) => s + v, 0) / drift4.length;
   const avgDrift6 = drift6.reduce((s, v) => s + v, 0) / drift6.length;
   return {
     pi: n,
+    nG,
     meanGap: mean,
-    twinIndex: (twin / n) * mean,
+    twinIndex: (twin / nG) * mean,
     dispersion: variance / (mean * mean),
     rho1det,
-    mod6: { m0: (100 * m0) / n, m2: (100 * m2) / n, m4: (100 * m4) / n },
+    mod6: { m0: (100 * m0) / nG, m2: (100 * m2) / nG, m4: (100 * m4) / nG },
     d4: c43 - c41,
     d6: c65 - c61,
     drift4: avgDrift4,
@@ -363,9 +369,9 @@ md.push(`# Условная модель P(g | x, g_prev, r mod 30)`);
 md.push('');
 md.push(`Сгенерировано scripts/markov-model.mjs, ${out.generatedAt}${quick ? ' (QUICK)' : ''}.`);
 md.push('');
-md.push(`Механика: следующий промежуток — гамма со средним ln x · (1 + beta·(1 − g_prev/ln x)) (ручка антикорреляции beta); с вероятностью min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} промежуток = 2 (ручка kappa); гамма-форма k (ручка сгущений); безпараметрический residue-шаг: raw-промежуток округляется к ближайшему чётному g', для которого (r + g') mod 30 разрешён (адаптивная компенсация плотности по скользящему смещению). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения.`);
+md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): гамма со средним ln x · (1 + beta·(1 − g_prev/ln x)) (ручка антикорреляции beta); с вероятностью min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} промежуток = 2 (ручка kappa); гамма-форма k (ручка сгущений); безпараметрический residue-шаг: raw-промежуток округляется к ближайшему чётному g', для которого (r + g') mod 30 разрешён. Дополнительное состояние e — компенсация плотности: e_{n+1} = e_n + lambda·((g'_n − raw_n) − e_n), lambda = 0.002; среднее следующего скачка уменьшается на e_n. В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения.`);
 md.push('');
-md.push(`**Сплит статистик (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 1–3). VALIDATION — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, перенос twinIndex/disp/ρ₁det на 10⁶ и 10⁸, средний промежуток после twin. Параметры после фита заморожены.`);
+md.push(`**Сплит статистик и сидов (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 101–105). VALIDATION на независимой выборке — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, средний промежуток после twin (сиды 201–210, не пересекаются с fit); перенос twinIndex/disp/ρ₁det на 10⁶ и 10⁸ (сиды 301–305). Параметры после фита заморожены.`);
 md.push('');
 md.push(`## Фит (качество подгонки, mean ± sd по ${valSeeds.length} сидам)`);
 md.push('');
