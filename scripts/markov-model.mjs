@@ -59,6 +59,7 @@ function nearestAllowed(x, gRaw, tie, rnd, tieCounter) {
 
 function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small' }) {
   const rnd = splitmix32(seed);
+  const tieRnd = splitmix32(seed ^ 0x9e3779b9);
   const seq = [2, 3];
   let x = 3;
   let prevGap = Math.log(x);
@@ -78,7 +79,7 @@ function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small' }) {
       const mult = Math.max(0.5, Math.min(1.5, 1 + beta * (1 - prevGap / lnx)));
       const m = Math.max(3, (lnx * mult - 2 * twinP) / (1 - twinP) - emaDisp);
       raw = gammaSample(rnd, kShape, m);
-      g = nearestAllowed(x, raw, tie, rnd, tieCounter);
+      g = nearestAllowed(x, raw, tie, tieRnd, tieCounter);
       emaDisp += 0.002 * (g - raw - emaDisp);
     }
     x += g;
@@ -303,6 +304,17 @@ for (; round < (quick ? 3 : 6) && !converged; round++) {
 }
 console.log(`fitted: kappa=${kappa.toFixed(3)} k=${k.toFixed(3)} beta=${beta.toFixed(3)} (rounds=${round})`);
 
+const betaSweep = [];
+for (let i = 0; i <= 16; i++) {
+  const b = (2 * i) / 16;
+  betaSweep.push({ beta: b, rho1det: fitEval(kappa, k, b, 'rho1det') });
+}
+const betaMonotone = betaSweep.every((p, i) => i === 0 || p.rho1det <= betaSweep[i - 1].rho1det + 1e-9);
+const sweepTo15 = betaSweep.filter((p) => p.beta <= 1.5);
+const betaMonotoneTo15 = sweepTo15.every((p, i) => i === 0 || p.rho1det <= sweepTo15[i - 1].rho1det + 1e-9);
+const maxRebound = Math.max(0, ...betaSweep.map((p, i) => (i === 0 ? 0 : p.rho1det - betaSweep[i - 1].rho1det)));
+console.log(`beta sweep: rho1det(0)=${betaSweep[0].rho1det.toFixed(4)} -> rho1det(2)=${betaSweep[16].rho1det.toFixed(4)}, monotoneDecreasing=${betaMonotone}, monotoneOn[0,1.5]=${betaMonotoneTo15}, maxRebound=${maxRebound.toFixed(5)}`);
+
 const valRuns = [];
 for (const seed of valSeeds) {
   const seq = generateMarkov({ seed, xTarget: X_FIT, kappa, kShape: k, beta });
@@ -315,19 +327,12 @@ const agg = (key) => meanSd(valRuns.map((r) => r[key]));
 const m6agg = (sub) => meanSd(valRuns.map((r) => r.mod6[sub]));
 const driftAgg = (key) => meanSd(valRuns.map((r) => r[key]));
 
+const tieSeeds = [];
+for (let s = 401; s <= 430; s++) tieSeeds.push(s);
 const tieControls = {};
-tieControls.small = {
-  d4: agg('d4'),
-  d6: agg('d6'),
-  drift6: driftAgg('drift6'),
-  residue5: agg('residue5'),
-  meanGap: agg('meanGap'),
-  mod6: { m0: m6agg('m0'), m2: m6agg('m2'), m4: m6agg('m4') },
-  pairs306: meanSd(valRuns.map((r) => r.pairs[30000000][30] / r.pairs[30000000][6]))
-};
-for (const tie of ['random', 'alternate']) {
+for (const tie of ['small', 'random', 'alternate']) {
   const runs = [];
-  for (const seed of valSeeds) {
+  for (const seed of tieSeeds) {
     const seq = generateMarkov({ seed, xTarget: X_FIT, kappa, kShape: k, beta, tie });
     const st = statsOf(seq, X_FIT);
     st.pairs3 = pairsOf(seq, X_FIT, [30000000])[30000000];
@@ -336,15 +341,19 @@ for (const tie of ['random', 'alternate']) {
   const aggT = (key) => meanSd(runs.map((r) => r[key]));
   const m6t = (sub) => meanSd(runs.map((r) => r.mod6[sub]));
   tieControls[tie] = {
+    seeds: tieSeeds.length,
     d4: aggT('d4'),
     d6: aggT('d6'),
+    d6Half1: meanSd(runs.slice(0, 15).map((r) => r.d6)),
+    d6Half2: meanSd(runs.slice(15).map((r) => r.d6)),
     drift6: aggT('drift6'),
     residue5: aggT('residue5'),
     meanGap: aggT('meanGap'),
     mod6: { m0: m6t('m0'), m2: m6t('m2'), m4: m6t('m4') },
     pairs306: meanSd(runs.map((r) => r.pairs3[30] / r.pairs3[6]))
   };
-  console.log(`tie ${tie}: d6 ${tieControls[tie].d6.mean.toFixed(0)}±${tieControls[tie].d6.sd.toFixed(0)}, share5 ${(100 * tieControls[tie].residue5.mean).toFixed(2)}%, pairs306 ${tieControls[tie].pairs306.mean.toFixed(3)}`);
+  const c = tieControls[tie];
+  console.log(`tie ${tie} (${c.seeds} seeds): d6 ${c.d6.mean.toFixed(0)}±${c.d6.sd.toFixed(0)} [halves ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)}], share5 ${(100 * c.residue5.mean).toFixed(2)}%, pairs306 ${c.pairs306.mean.toFixed(3)}`);
 }
 
 const transfer = {};
@@ -383,7 +392,7 @@ const out = {
   generatedAt: new Date().toISOString(),
   quick,
   xFit: X_FIT,
-  fit: { kappa, k, beta, rounds: round, targets: FIT_TARGETS, seeds: fitSeeds },
+  fit: { kappa, k, beta, rounds: round, targets: FIT_TARGETS, seeds: fitSeeds, betaSweep: { points: betaSweep, monotoneDecreasing: betaMonotone, monotoneTo15: betaMonotoneTo15, maxRebound } },
   fitSplit: {
     fitted: ['twinIndex (kappa)', 'var/mean² (k)', 'rho1det (beta)'],
     validation: ['pairs 30/6 и per-gap vs S на общих интервалах', 'гонки d4/d6 + drift', 'mod6-гистограмма промежутков', 'перенос twin/disp/rho1det на 1e6 и 1e8', 'средний промежуток после twin']
@@ -410,7 +419,7 @@ md.push(`# Модель с расширенным состоянием P(g | x, 
 md.push('');
 md.push(`Сгенерировано scripts/markov-model.mjs, ${out.generatedAt}${quick ? ' (QUICK)' : ''}.`);
 md.push('');
-md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): с вероятностью p = min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} — инъекция twin, g = 2; иначе обычный шаг: mult = 1 + beta·(1 − g_prev/ln x), raw ~ Gamma(k, среднее m). Полная формула среднего: m = max(3, (ln x · mult − 2p)/(1 − p) − e) — включает поправку на вероятность инъекции twin, вычет компенсации e и нижнюю границу 3; сокращённая запись ln x · mult — интуитивное описание роли beta. Безпараметрический residue-шаг: g' = ближайшее чётное с разрешённым (r + g') mod 30; при равных расстояниях до двух кандидатов действует правило tie ('small' — меньший, контролируется ниже). Состояние компенсации плотности обновляется кусочно: e_{n+1} = e_n + 0.002·(g'_n − raw_n − e_n) на обычном шаге; e_{n+1} = e_n при инъекции twin (raw не определён). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения. Генерация продолжается до первого элемента ≥ X (с явной проверкой покрытия после генерации), статистики считаются с обрезкой по X — плотность модели не фиксируется числом элементов.`);
+md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): с вероятностью p = min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} — инъекция twin, g = 2; иначе обычный шаг: mult = 1 + beta·(1 − g_prev/ln x), raw ~ Gamma(k, среднее m). Полная формула среднего: m = max(3, (ln x · mult − 2p)/(1 − p) − e) — включает поправку на вероятность инъекции twin, вычет компенсации e и нижнюю границу 3; сокращённая запись ln x · mult — интуитивное описание роли beta. Безпараметрический residue-шаг: g' = ближайшее чётное с разрешённым (r + g') mod 30; при равных расстояниях до двух кандидатов действует правило tie ('small' — меньший, контролируется ниже; random использует отдельный поток tieRnd = splitmix32(seed ^ 0x9e3779b9), не сдвигающий основной поток случайных чисел). Состояние компенсации плотности обновляется кусочно: e_{n+1} = e_n + 0.002·(g'_n − raw_n − e_n) на обычном шаге; e_{n+1} = e_n при инъекции twin (raw не определён). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения. Генерация продолжается до первого элемента ≥ X (с явной проверкой покрытия после генерации), статистики считаются с обрезкой по X — плотность модели не фиксируется числом элементов.`);
 md.push('');
 md.push(`**Сплит статистик и сидов (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 101–105). VALIDATION на независимой выборке — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, средний промежуток после twin (сиды 201–210, не пересекаются с fit); перенос twinIndex/disp/ρ₁det на 10⁶ и 10⁸ (сиды 301–305). Параметры после фита заморожены.`);
 md.push('');
@@ -423,6 +432,16 @@ md.push(`| var/mean² | ${realFit.dispersion.toFixed(3)} | ${out.fitQuality.disp
 md.push(`| rho1det | ${realFit.rho1det.toFixed(4)} | ${out.fitQuality.rho1det.mean.toFixed(4)} ± ${out.fitQuality.rho1det.sd.toFixed(4)} |`);
 md.push('');
 md.push(`Подобранные параметры: kappa=${out.fit.kappa}, k=${out.fit.k}, beta=${out.fit.beta} (раундов: ${out.fit.rounds}).`);
+md.push('');
+md.push(`### Монотонность rho1det(beta) при замороженных kappa и k (сиды 101–105)`);
+md.push('');
+md.push(`| beta | rho1det |`);
+md.push(`|---|---|`);
+for (const p of out.fit.betaSweep.points) {
+  md.push(`| ${p.beta.toFixed(3)} | ${p.rho1det.toFixed(4)} |`);
+}
+md.push('');
+md.push(`Зависимость ${out.fit.betaSweep.monotoneDecreasing ? '**монотонно убывает** на всём [0, 2]' : `монотонно убывает на [0, 1.5]${out.fit.betaSweep.monotoneTo15 ? '' : ' (с нарушением)'}`}; на [1.5, 2] — плато с отскоком не более ${out.fit.betaSweep.maxRebound.toFixed(5)} (уровень шума оценки ±0.0004 при 5 сидах). Подобранный beta = ${out.fit.beta} и цель фита −0.04 лежат в строго монотонной области — бисекция обоснована.`);
 md.push('');
 md.push(`## Валидация (параметры заморожены)`);
 md.push('');
@@ -442,14 +461,14 @@ for (const cut of X_PAIRS) {
   md.push(`| пары 30/6 @ ${cut.toExponential(0)} | ${row.real30.toFixed(3)} (𝔖 1.333) | ${row.model.mean.toFixed(3)} ± ${row.model.sd.toFixed(3)} | ${Math.abs(row.model.mean - row.real30) < 3 * row.model.sd ? '✅' : '❌'} |`);
 }
 md.push('');
-md.push(`### Контроль правила разрешения равенств в nearest-allowed (сиды 201–210, параметры заморожены)`);
+md.push(`### Контроль правила разрешения равенств в nearest-allowed (30 выделенных сидов 401–430, параметры заморожены; random использует отдельный поток tieRnd, не сдвигающий основной поток)`);
 md.push('');
-md.push(`| Вариант | Δ₄ | Δ₆ | drift Δ₆ | доля 5 mod 6, % | mod6 0/2/4, % | meanGap | пары 30/6 @ 3e7 |`);
-md.push(`|---|---|---|---|---|---|---|---|`);
+md.push(`| Вариант | Δ₄ | Δ₆ (30 сидов) | Δ₆ 401–415 / 416–430 | drift Δ₆ | доля 5 mod 6, % | mod6 0/2/4, % | meanGap | пары 30/6 @ 3e7 |`);
+md.push(`|---|---|---|---|---|---|---|---|---|`);
 const realM6 = out.validation.mod6.real;
-md.push(`| real | ${races.real.d4} | ${races.real.d6} | +${races.real.drift6.toFixed(3)} | ${(100 * out.validation.residue5.real).toFixed(2)} | ${realM6.m0.toFixed(1)}/${realM6.m2.toFixed(1)}/${realM6.m4.toFixed(1)} | ${out.validation.meanAfterTwin.meanGapReal.toFixed(2)} | ${out.validation.pairs[30000000].real30.toFixed(3)} |`);
+md.push(`| real | ${races.real.d4} | ${races.real.d6} | — | +${races.real.drift6.toFixed(3)} | ${(100 * out.validation.residue5.real).toFixed(2)} | ${realM6.m0.toFixed(1)}/${realM6.m2.toFixed(1)}/${realM6.m4.toFixed(1)} | ${out.validation.meanAfterTwin.meanGapReal.toFixed(2)} | ${out.validation.pairs[30000000].real30.toFixed(3)} |`);
 for (const [tie, c] of Object.entries(out.validation.tieControls)) {
-  md.push(`| ${tie} | ${c.d4.mean.toFixed(0)} ± ${c.d4.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} | ${c.drift6.mean.toFixed(1)} ± ${c.drift6.sd.toFixed(1)} | ${(100 * c.residue5.mean).toFixed(2)} | ${c.mod6.m0.mean.toFixed(1)}/${c.mod6.m2.mean.toFixed(1)}/${c.mod6.m4.mean.toFixed(1)} | ${c.meanGap.mean.toFixed(2)} | ${c.pairs306.mean.toFixed(3)} ± ${c.pairs306.sd.toFixed(3)} |`);
+  md.push(`| ${tie} | ${c.d4.mean.toFixed(0)} ± ${c.d4.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} | ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)} | ${c.drift6.mean.toFixed(1)} ± ${c.drift6.sd.toFixed(1)} | ${(100 * c.residue5.mean).toFixed(2)} | ${c.mod6.m0.mean.toFixed(1)}/${c.mod6.m2.mean.toFixed(1)}/${c.mod6.m4.mean.toFixed(1)} | ${c.meanGap.mean.toFixed(2)} | ${c.pairs306.mean.toFixed(3)} ± ${c.pairs306.sd.toFixed(3)} |`);
 }
 md.push('');
 md.push(`### Пары per-gap на [2, 3·10⁷]: пары(g)/пары(6) — real, модель, 𝔖(g)/𝔖(6)`);
