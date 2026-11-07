@@ -42,45 +42,51 @@ function gammaSample(rnd, shape, mean) {
   return gammaByShape(rnd, shape, mean / shape);
 }
 
-function nearestAllowed(x, gRaw) {
+function nearestAllowed(x, gRaw, tie, rnd, tieCounter) {
   let g0 = Math.max(2, Math.round(gRaw / 2) * 2);
   const r = x % 30;
   for (let off = 0; off < 60; off += 2) {
     const cands = off === 0 ? [g0] : [g0 - off, g0 + off];
-    for (const g of cands) {
-      if (g < 2) continue;
-      if (ALLOWED30.includes((r + g) % 30)) return g;
-    }
+    const allowed = cands.filter((g) => g >= 2 && ALLOWED30.includes((r + g) % 30));
+    if (allowed.length === 0) continue;
+    if (allowed.length === 1 || tie === 'small') return allowed[0];
+    if (tie === 'random') return rnd() < 0.5 ? allowed[0] : allowed[allowed.length - 1];
+    tieCounter.n += 1;
+    return tieCounter.n % 2 === 1 ? allowed[0] : allowed[allowed.length - 1];
   }
   return g0;
 }
 
-function generateMarkov({ seed, xTarget, kappa, kShape, beta }) {
+function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small' }) {
   const rnd = splitmix32(seed);
   const seq = [2, 3];
   let x = 3;
   let prevGap = Math.log(x);
   let emaDisp = 0;
+  const tieCounter = { n: 0 };
   let guard = 0;
-  const limit = xTarget * 1.02;
-  while (x < xTarget && guard < 2e9) {
+  while (x < xTarget) {
     guard++;
+    if (guard > 2e9) break;
     const lnx = Math.log(x);
     const twinP = Math.min(kappa / lnx, 0.9);
     let g;
+    let raw = null;
     if (TWIN_CLASSES.includes(x % 30) && rnd() < twinP) {
       g = 2;
     } else {
       const mult = Math.max(0.5, Math.min(1.5, 1 + beta * (1 - prevGap / lnx)));
       const m = Math.max(3, (lnx * mult - 2 * twinP) / (1 - twinP) - emaDisp);
-      const raw = gammaSample(rnd, kShape, m);
-      g = nearestAllowed(x, raw);
+      raw = gammaSample(rnd, kShape, m);
+      g = nearestAllowed(x, raw, tie, rnd, tieCounter);
       emaDisp += 0.002 * (g - raw - emaDisp);
     }
     x += g;
-    if (x > limit) break;
     seq.push(x);
     prevGap = g;
+  }
+  if (seq[seq.length - 1] < xTarget) {
+    throw new Error(`Sequence did not reach xTarget=${xTarget} (last=${seq[seq.length - 1]}, guard=${guard})`);
   }
   return seq;
 }
@@ -204,6 +210,7 @@ function statsOf(seq, X) {
     mod6: { m0: (100 * m0) / nG, m2: (100 * m2) / nG, m4: (100 * m4) / nG },
     d4: c43 - c41,
     d6: c65 - c61,
+    residue5: c65 / Math.max(1, c61 + c65),
     drift4: avgDrift4,
     drift6: avgDrift6,
     meanAfterTwin: afterTwinCnt > 0 ? afterTwinSum / afterTwinCnt : null
@@ -308,6 +315,38 @@ const agg = (key) => meanSd(valRuns.map((r) => r[key]));
 const m6agg = (sub) => meanSd(valRuns.map((r) => r.mod6[sub]));
 const driftAgg = (key) => meanSd(valRuns.map((r) => r[key]));
 
+const tieControls = {};
+tieControls.small = {
+  d4: agg('d4'),
+  d6: agg('d6'),
+  drift6: driftAgg('drift6'),
+  residue5: agg('residue5'),
+  meanGap: agg('meanGap'),
+  mod6: { m0: m6agg('m0'), m2: m6agg('m2'), m4: m6agg('m4') },
+  pairs306: meanSd(valRuns.map((r) => r.pairs[30000000][30] / r.pairs[30000000][6]))
+};
+for (const tie of ['random', 'alternate']) {
+  const runs = [];
+  for (const seed of valSeeds) {
+    const seq = generateMarkov({ seed, xTarget: X_FIT, kappa, kShape: k, beta, tie });
+    const st = statsOf(seq, X_FIT);
+    st.pairs3 = pairsOf(seq, X_FIT, [30000000])[30000000];
+    runs.push(st);
+  }
+  const aggT = (key) => meanSd(runs.map((r) => r[key]));
+  const m6t = (sub) => meanSd(runs.map((r) => r.mod6[sub]));
+  tieControls[tie] = {
+    d4: aggT('d4'),
+    d6: aggT('d6'),
+    drift6: aggT('drift6'),
+    residue5: aggT('residue5'),
+    meanGap: aggT('meanGap'),
+    mod6: { m0: m6t('m0'), m2: m6t('m2'), m4: m6t('m4') },
+    pairs306: meanSd(runs.map((r) => r.pairs3[30] / r.pairs3[6]))
+  };
+  console.log(`tie ${tie}: d6 ${tieControls[tie].d6.mean.toFixed(0)}±${tieControls[tie].d6.sd.toFixed(0)}, share5 ${(100 * tieControls[tie].residue5.mean).toFixed(2)}%, pairs306 ${tieControls[tie].pairs306.mean.toFixed(3)}`);
+}
+
 const transfer = {};
 for (const X of [1e6, 1e8]) {
   if (quick && X === 1e8) continue;
@@ -358,18 +397,20 @@ const out = {
   validation: {
     races: { real: { d4: realFit.d4, d6: realFit.d6, drift4: realFit.drift4, drift6: realFit.drift6 }, model: { d4: agg('d4'), d6: agg('d6'), drift4: driftAgg('drift4'), drift6: driftAgg('drift6') } },
     mod6: { real: realFit.mod6, model: { m0: m6agg('m0'), m2: m6agg('m2'), m4: m6agg('m4') } },
+    residue5: { real: realFit.residue5, model: agg('residue5') },
     meanAfterTwin: { real: realFit.meanAfterTwin, model: agg('meanAfterTwin'), meanGapReal: realFit.meanGap, meanGapModel: agg('meanGap') },
     pairs: pairTable,
+    tieControls,
     transfer
   }
 };
 
 const md = [];
-md.push(`# Условная модель P(g | x, g_prev, r mod 30)`);
+md.push(`# Модель с расширенным состоянием P(g | x, g_prev, r mod 30, e)`);
 md.push('');
 md.push(`Сгенерировано scripts/markov-model.mjs, ${out.generatedAt}${quick ? ' (QUICK)' : ''}.`);
 md.push('');
-md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): гамма со средним ln x · (1 + beta·(1 − g_prev/ln x)) (ручка антикорреляции beta); с вероятностью min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} промежуток = 2 (ручка kappa); гамма-форма k (ручка сгущений); безпараметрический residue-шаг: raw-промежуток округляется к ближайшему чётному g', для которого (r + g') mod 30 разрешён. Дополнительное состояние e — компенсация плотности: e_{n+1} = e_n + lambda·((g'_n − raw_n) − e_n), lambda = 0.002; среднее следующего скачка уменьшается на e_n. В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения.`);
+md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): с вероятностью p = min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} — инъекция twin, g = 2; иначе обычный шаг: mult = 1 + beta·(1 − g_prev/ln x), raw ~ Gamma(k, среднее m). Полная формула среднего: m = max(3, (ln x · mult − 2p)/(1 − p) − e) — включает поправку на вероятность инъекции twin, вычет компенсации e и нижнюю границу 3; сокращённая запись ln x · mult — интуитивное описание роли beta. Безпараметрический residue-шаг: g' = ближайшее чётное с разрешённым (r + g') mod 30; при равных расстояниях до двух кандидатов действует правило tie ('small' — меньший, контролируется ниже). Состояние компенсации плотности обновляется кусочно: e_{n+1} = e_n + 0.002·(g'_n − raw_n − e_n) на обычном шаге; e_{n+1} = e_n при инъекции twin (raw не определён). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения. Генерация продолжается до первого элемента ≥ X (с явной проверкой покрытия после генерации), статистики считаются с обрезкой по X — плотность модели не фиксируется числом элементов.`);
 md.push('');
 md.push(`**Сплит статистик и сидов (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 101–105). VALIDATION на независимой выборке — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, средний промежуток после twin (сиды 201–210, не пересекаются с fit); перенос twinIndex/disp/ρ₁det на 10⁶ и 10⁸ (сиды 301–305). Параметры после фита заморожены.`);
 md.push('');
@@ -399,6 +440,16 @@ md.push(`| средний промежуток после twin | ${mat.real ? ma
 for (const cut of X_PAIRS) {
   const row = out.validation.pairs[cut];
   md.push(`| пары 30/6 @ ${cut.toExponential(0)} | ${row.real30.toFixed(3)} (𝔖 1.333) | ${row.model.mean.toFixed(3)} ± ${row.model.sd.toFixed(3)} | ${Math.abs(row.model.mean - row.real30) < 3 * row.model.sd ? '✅' : '❌'} |`);
+}
+md.push('');
+md.push(`### Контроль правила разрешения равенств в nearest-allowed (сиды 201–210, параметры заморожены)`);
+md.push('');
+md.push(`| Вариант | Δ₄ | Δ₆ | drift Δ₆ | доля 5 mod 6, % | mod6 0/2/4, % | meanGap | пары 30/6 @ 3e7 |`);
+md.push(`|---|---|---|---|---|---|---|---|`);
+const realM6 = out.validation.mod6.real;
+md.push(`| real | ${races.real.d4} | ${races.real.d6} | +${races.real.drift6.toFixed(3)} | ${(100 * out.validation.residue5.real).toFixed(2)} | ${realM6.m0.toFixed(1)}/${realM6.m2.toFixed(1)}/${realM6.m4.toFixed(1)} | ${out.validation.meanAfterTwin.meanGapReal.toFixed(2)} | ${out.validation.pairs[30000000].real30.toFixed(3)} |`);
+for (const [tie, c] of Object.entries(out.validation.tieControls)) {
+  md.push(`| ${tie} | ${c.d4.mean.toFixed(0)} ± ${c.d4.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} | ${c.drift6.mean.toFixed(1)} ± ${c.drift6.sd.toFixed(1)} | ${(100 * c.residue5.mean).toFixed(2)} | ${c.mod6.m0.mean.toFixed(1)}/${c.mod6.m2.mean.toFixed(1)}/${c.mod6.m4.mean.toFixed(1)} | ${c.meanGap.mean.toFixed(2)} | ${c.pairs306.mean.toFixed(3)} ± ${c.pairs306.sd.toFixed(3)} |`);
 }
 md.push('');
 md.push(`### Пары per-gap на [2, 3·10⁷]: пары(g)/пары(6) — real, модель, 𝔖(g)/𝔖(6)`);
