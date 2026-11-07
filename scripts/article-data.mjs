@@ -14,6 +14,7 @@ const seeds = quick ? [1, 2] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const curvePoints = 200;
 const curveFrom = 300000;
 const pairGaps = [2, 4, 6, 8, 10, 12, 30];
+const pairRanges = [1000000, 10000000, 30000000];
 
 const modelConfigs = [
   { id: 'jump', opts: { mode: 'jump' } },
@@ -271,9 +272,37 @@ const realAutocorr = autocorr(realGaps);
 const realResid = detrendedResiduals(real, xBig);
 const realRho1Det = rho1Of(realResid);
 const bootRnd = splitmix32(20261106);
-const bootB = quick ? 50 : 200;
-const realRho1Ci = blockBootstrapCi(realGaps, 50000, bootB, bootRnd);
-const realRho1DetCi = blockBootstrapCi(realResid, 50000, bootB, bootRnd);
+const bootB = quick ? 50 : 1000;
+
+function movAvgResiduals(seq, win = 2000) {
+  const nG = seq.length - 1;
+  const gaps = new Float64Array(nG);
+  for (let i = 1; i < seq.length; i++) gaps[i - 1] = seq[i] - seq[i - 1];
+  const prefix = new Float64Array(nG + 1);
+  for (let i = 0; i < nG; i++) prefix[i + 1] = prefix[i] + gaps[i];
+  const resid = new Float64Array(nG);
+  for (let i = 0; i < nG; i++) {
+    const lo = Math.max(0, i - win);
+    const hi = Math.min(nG, i + win + 1);
+    resid[i] = gaps[i] - (prefix[hi] - prefix[lo]) / (hi - lo);
+  }
+  return resid;
+}
+
+const variantArrays = {
+  raw: realGaps,
+  bins10: detrendedResiduals(real, xBig, 10),
+  bins20: realResid,
+  bins40: detrendedResiduals(real, xBig, 40),
+  movavg: movAvgResiduals(real)
+};
+const rho1Robust = {};
+for (const [name, vals] of Object.entries(variantArrays)) {
+  rho1Robust[name] = { point: rho1Of(vals), ci: blockBootstrapCi(vals, 50000, bootB, bootRnd) };
+  console.log(`rho1 ${name}: ${rho1Robust[name].point.toFixed(4)} [${rho1Robust[name].ci.lo.toFixed(4)}; ${rho1Robust[name].ci.hi.toFixed(4)}] (${bootB} resamples)`);
+}
+const realRho1Ci = rho1Robust.raw.ci;
+const realRho1DetCi = rho1Robust.bins20.ci;
 const realMod6 = mod6Shares(real);
 const realDiag = digitDiag(real);
 const realTwin = twinIndex(real);
@@ -292,6 +321,21 @@ for (const g of pairGaps) {
     if (realIsP(p + g)) c++;
   }
   realPairs[g] = c;
+}
+const realPairsByX = {};
+for (const X of pairRanges) {
+  const pairs = {};
+  for (const g of pairGaps) {
+    let c = 0;
+    for (let i = 0; i < real.length; i++) {
+      const p = real[i];
+      if (p + g > X) break;
+      if (realIsP(p + g)) c++;
+    }
+    pairs[g] = c;
+  }
+  realPairsByX[X] = { pairs, ratio: pairs[30] / pairs[6] };
+  console.log(`real pairs@${X.toExponential(0)}: 30/6 = ${(pairs[30] / pairs[6]).toFixed(3)}`);
 }
 
 const championMilestones = [1e4, 1e5, 1e6, 1e7, 1e8].filter((m) => m <= xBig);
@@ -315,6 +359,15 @@ const evolution = [];
       mi++;
     }
   }
+  const total = real.length - 1;
+  evolution.push({
+    x: real[real.length - 1],
+    s6: (100 * (counts.get(6) ?? 0)) / total,
+    s12: (100 * (counts.get(12) ?? 0)) / total,
+    s30: (100 * (counts.get(30) ?? 0)) / total,
+    s2: (100 * (counts.get(2) ?? 0)) / total,
+    s4: (100 * (counts.get(4) ?? 0)) / total
+  });
 }
 
 const pairModels = {};
@@ -326,36 +379,34 @@ for (const config of modelConfigs) {
     const bits = new Uint8Array(Math.ceil((xMax + 40) / 8));
     for (const p of seq) bits[p >> 3] |= 1 << (p & 7);
     const isP = (v) => (bits[v >> 3] & (1 << (v & 7))) !== 0;
-    const pairs = {};
-    for (const g of pairGaps) {
-      let c = 0;
-      for (let i = 0; i < seq.length; i++) {
-        const p = seq[i];
-        if (p + g > xMax) break;
-        if (isP(p + g)) c++;
+    const pairsByX = {};
+    for (const X of pairRanges) {
+      const pairs = {};
+      for (const g of pairGaps) {
+        let c = 0;
+        for (let i = 0; i < seq.length; i++) {
+          const p = seq[i];
+          if (p + g > X) break;
+          if (isP(p + g)) c++;
+        }
+        pairs[g] = c;
       }
-      pairs[g] = c;
+      pairsByX[X] = { pairs, ratio: pairs[30] / pairs[6] };
     }
     const counts = new Map();
     const g = gapsOf(seq);
     for (const x of g) counts.set(x, (counts.get(x) ?? 0) + 1);
     const shares = {};
     for (let gg = 2; gg <= 60; gg += 2) shares[gg] = (100 * (counts.get(gg) ?? 0)) / g.length;
-    perSeed.push({ pairs, shares, xMax });
-  }
-  const pairs = {};
-  const pairsSd = {};
-  for (const g of pairGaps) {
-    const agg = meanSd(perSeed.map((r) => r.pairs[g]));
-    pairs[g] = agg.mean;
-    pairsSd[g] = agg.sd;
+    perSeed.push({ pairsByX, shares, xMax });
   }
   const shares = {};
   for (let gg = 2; gg <= 60; gg += 2) shares[gg] = perSeed.reduce((s, r) => s + r.shares[gg], 0) / perSeed.length;
-  const ratio = meanSd(perSeed.map((r) => r.pairs[30] / r.pairs[6]));
+  const ratios = {};
+  for (const X of pairRanges) ratios[X] = meanSd(perSeed.map((r) => r.pairsByX[X].ratio));
   const xMax = meanSd(perSeed.map((r) => r.xMax));
-  pairModels[config.id] = { pairs, pairsSd, shares, ratio, xMax: xMax.mean };
-  console.log(`pairs ${config.id}: 30/6 = ${ratio.mean.toFixed(3)}±${ratio.sd.toFixed(3)} (${seeds.length} seeds, xMax ${xMax.mean.toFixed(0)})`);
+  pairModels[config.id] = { ratios, shares, xMax: xMax.mean };
+  console.log(`pairs ${config.id}: 30/6 @1e6/${ratios[1000000].mean.toFixed(3)}±${ratios[1000000].sd.toFixed(3)} @1e7/${ratios[10000000].mean.toFixed(3)}±${ratios[10000000].sd.toFixed(3)} @3e7/${ratios[30000000].mean.toFixed(3)}±${ratios[30000000].sd.toFixed(3)} (${seeds.length} seeds)`);
 }
 
 const perConfig = {};
@@ -451,6 +502,8 @@ const out = {
     dispersion: realDisp,
     mod6: realMod6,
     pairs: realPairs,
+    pairsByX: realPairsByX,
+    rho1Robust,
     records: realRecords.slice(-8),
     evolution
   },

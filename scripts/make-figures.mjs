@@ -180,20 +180,21 @@ const fmtK = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M` : v >=
   writeFileSync(path.join(figuresDir, 'fig3-champions.svg'), s);
 }
 
-// --- fig4: pairs 30/6 by source
+// --- fig4: pairs 30/6 by source (common interval [2, 3e7])
 {
+  const X3 = 30000000;
   const sRatio = data.constants.sRatio306;
   const entries = [
-    { label: 'реальные', ratio: data.real.pairs[30] / data.real.pairs[6], sd: 0, color: '#1c1c1a' },
-    { label: 'jump', ratio: data.pairModels.jump.ratio.mean, sd: data.pairModels.jump.ratio.sd, color: colors.jump },
-    { label: 'jump-corr', ratio: data.pairModels['jump-corr'].ratio.mean, sd: data.pairModels['jump-corr'].ratio.sd, color: colors['jump-corr'] },
-    { label: 'lattice30-corr', ratio: data.pairModels['jump-lattice30-corr'].ratio.mean, sd: data.pairModels['jump-lattice30-corr'].ratio.sd, color: colors['jump-lattice30-corr'] }
+    { label: 'реальные', ratio: data.real.pairsByX[X3].ratio, sd: 0, color: '#1c1c1a' },
+    { label: 'jump', ratio: data.pairModels.jump.ratios[X3].mean, sd: data.pairModels.jump.ratios[X3].sd, color: colors.jump },
+    { label: 'jump-corr', ratio: data.pairModels['jump-corr'].ratios[X3].mean, sd: data.pairModels['jump-corr'].ratios[X3].sd, color: colors['jump-corr'] },
+    { label: 'lattice30-corr', ratio: data.pairModels['jump-lattice30-corr'].ratios[X3].mean, sd: data.pairModels['jump-lattice30-corr'].ratios[X3].sd, color: colors['jump-lattice30-corr'] }
   ];
   const yMax = Math.max(...entries.map((e) => e.ratio + e.sd), sRatio) * 1.2;
   const slot = plotW / entries.length;
   const yMap = (v) => M.t + plotH - (v / yMax) * plotH;
   const yTicks = niceTicks(0, yMax, 6).ticks;
-  let s = svgHeader('Отношение пар (p, p+30) / (p, p+6): реальность, модели (mean ± sd, 10 сидов), 𝔖');
+  let s = svgHeader('Отношение пар (p, p+30) / (p, p+6) на общем интервале [2, 3·10⁷]: реальность, модели (mean ± sd, 10 сидов), 𝔖');
   s += axes([], yTicks, (v) => v, yMap, () => '', (v) => v.toFixed(2), '', 'пары 30 / пары 6');
   entries.forEach((e, i) => {
     const x0 = M.l + i * slot + slot * 0.14;

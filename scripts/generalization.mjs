@@ -131,10 +131,10 @@ function bootstrapRhoCi(values, rnd) {
   return { lo: sorted[Math.floor(0.025 * BOOT_B)], hi: sorted[Math.ceil(0.975 * BOOT_B) - 1] };
 }
 
-function modelStats(opts, n, seed) {
+function modelStats(opts, n, seed, limit) {
   const seq = gen(opts, n, seed);
   const xMax = seq[seq.length - 1];
-  const s = fullStats(seq, undefined, xMax);
+  const s = fullStats(seq, limit, limit === undefined ? xMax : limit);
   return { xMax, ...s };
 }
 
@@ -156,17 +156,17 @@ function meanSd(values) {
   return { mean: m, sd, se, ciLo: m - 1.96 * se, ciHi: m + 1.96 * se };
 }
 
-function fitCorr(piX, real, fitSeeds, bisectIters, maxRounds, tag) {
+function fitCorr(X, piCount, real, fitSeeds, bisectIters, maxRounds, tag) {
   const clampK = (v) => Math.min(3, Math.max(1.05, v));
   let k = clampK(1 / real.dispersion);
   const twinAt = (kappa, kk) => {
     let s = 0;
-    for (const seed of fitSeeds) s += modelStats({ twinRate: kappa, gapShape: kk }, piX, seed).twinIndex;
+    for (const seed of fitSeeds) s += modelStats({ twinRate: kappa, gapShape: kk }, piCount, seed, X).twinIndex;
     return s / fitSeeds.length;
   };
   const dispAt = (kappa, kk) => {
     let s = 0;
-    for (const seed of fitSeeds) s += modelStats({ twinRate: kappa, gapShape: kk }, piX, seed).dispersion;
+    for (const seed of fitSeeds) s += modelStats({ twinRate: kappa, gapShape: kk }, piCount, seed, X).dispersion;
     return s / fitSeeds.length;
   };
   let kappa = 0.8;
@@ -202,7 +202,7 @@ function fitCorr(piX, real, fitSeeds, bisectIters, maxRounds, tag) {
     hi = 4;
     bisect(bisectIters);
   }
-  const check = modelStats({ twinRate: kappa, gapShape: k }, piX, fitSeeds[0]);
+  const check = modelStats({ twinRate: kappa, gapShape: k }, piCount, fitSeeds[0], X);
   console.log(`fit@${tag}: kappa=${kappa.toFixed(3)} k=${k.toFixed(3)} rounds=${round} -> twin ${check.twinIndex.toFixed(3)} (target ${real.twinIndex.toFixed(3)}), disp ${check.dispersion.toFixed(3)} (target ${real.dispersion.toFixed(3)})`);
   return { kappa: Number(kappa.toFixed(4)), k: Number(k.toFixed(4)), rounds: round };
 }
@@ -220,27 +220,24 @@ for (const X of scales) {
   const s = fullStats(primes, X, X);
   const gaps = materialize(primes, X, null, null);
   const bootRaw = bootstrapRhoCi(gaps, rnd);
-  let bootDet = null;
-  if (X <= 1e8) {
-    const logTl = Math.log(X);
-    const binOf = (x) => Math.max(0, Math.min(BINS - 1, Math.floor((BINS * Math.log(x)) / logTl)));
-    const resid = materialize(primes, X, s.binMean, binOf);
-    bootDet = bootstrapRhoCi(resid, rnd);
-  }
+  const logTl = Math.log(X);
+  const binOf = (x) => Math.max(0, Math.min(BINS - 1, Math.floor((BINS * Math.log(x)) / logTl)));
+  const resid = materialize(primes, X, s.binMean, binOf);
+  const bootDet = bootstrapRhoCi(resid, rnd);
   piX[X] = piAt(primes, X);
   realBoot[X] = { rho1: bootRaw, rho1Detrended: bootDet };
   realStats[X] = s;
-  const detTxt = bootDet ? ` [${bootDet.lo.toFixed(4)}; ${bootDet.hi.toFixed(4)}]` : ' (no boot)';
+  const detTxt = ` [${bootDet.lo.toFixed(4)}; ${bootDet.hi.toFixed(4)}]`;
   console.log(`real@${X.toExponential(0)}: pi=${piX[X]} twin=${s.twinIndex.toFixed(3)} disp=${s.dispersion.toFixed(3)} rho1=${s.rho1.toFixed(4)} [${bootRaw.lo.toFixed(4)}; ${bootRaw.hi.toFixed(4)}] rho1det=${s.rho1Detrended.toFixed(4)}${detTxt}`);
 }
 
 const fits = {};
-fits[1e6] = fitCorr(piX[1e6], realStats[1e6], [1, 2, 3], quick ? 8 : 10, quick ? 4 : 6, '1e6');
-fits[1e8] = fitCorr(piX[1e8], realStats[1e8], quick ? [1] : [1, 2], quick ? 8 : 10, quick ? 4 : 6, '1e8');
+fits[1e6] = fitCorr(1e6, piX[1e6], realStats[1e6], [1, 2, 3], quick ? 8 : 10, quick ? 4 : 6, '1e6');
+fits[1e8] = fitCorr(1e8, piX[1e8], realStats[1e8], quick ? [1] : [1, 2], quick ? 8 : 10, quick ? 4 : 6, '1e8');
 
 function testConfig(id, opts, X, seeds, fitTag) {
   const runs = [];
-  for (const seed of seeds) runs.push(modelStats(opts, piX[X], seed));
+  for (const seed of seeds) runs.push(modelStats(opts, piX[X], seed, X));
   const agg = (key) => meanSd(runs.map((r) => r[key]));
   const m6 = (sub) => meanSd(runs.map((r) => r.mod6[sub]));
   const out = {
