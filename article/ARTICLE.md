@@ -282,4 +282,4 @@ node scripts/markov-model.mjs          # → results/markov-model.md
 node scripts/compare-model-reality.mjs # → results/model-vs-reality.md
 ```
 
-Ключевые файлы: генератор и ручки — `src/core/sequence.mjs`; решето — `src/core/real-primes.mjs`; сборка данных — `scripts/article-data.mjs`; графики — `scripts/make-figures.mjs`; валидация переноса — `scripts/generalization.mjs`. Ручки доступны в UI (чекбоксы решёток, слайдеры twinRate/gapShape) и через CLI (`node scripts/cli.mjs --help`).
+Ключевые файлы: генератор и ручки — `src/core/sequence.mjs`; решето — `src/core/real-primes.mjs`; сборка данных — `scripts/article-data.mjs`; графики — `scripts/make-figures.mjs`; валидация переноса — `scripts/generalization.mjs`; условная модель — `scripts/markov-model.mjs`. Все прогонки детерминированы (splitmix32, фиксированные сиды): перезапуск опубликованного скрипта воспроизводит все числа отчёта; `results/markov-model.md` печатает hash коммита и sha256 скрипта, которым сгенерирован. Ручки доступны в UI (чекбоксы решёток, слайдеры twinRate/gapShape) и через CLI (`node scripts/cli.mjs --help`).

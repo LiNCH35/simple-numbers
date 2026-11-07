@@ -1,11 +1,21 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { splitmix32, TWIN_PRIME_CONSTANT, isPrime } from '../src/core/sequence.mjs';
 import { primesUpTo } from '../src/core/real-primes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const resultsDir = path.join(__dirname, '..', 'results');
+
+const scriptSha = createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex').slice(0, 16);
+let gitCommit = 'unknown';
+try {
+  gitCommit = execSync('git rev-parse --short HEAD', { cwd: path.join(__dirname, '..') }).toString().trim();
+} catch {
+  gitCommit = 'unknown';
+}
 
 const quick = process.argv.includes('--quick');
 const X_FIT = 30000000;
@@ -390,6 +400,7 @@ for (const cut of X_PAIRS) {
 
 const out = {
   generatedAt: new Date().toISOString(),
+  provenance: { scriptSha256_16: scriptSha, gitHead: gitCommit },
   quick,
   xFit: X_FIT,
   fit: { kappa, k, beta, rounds: round, targets: FIT_TARGETS, seeds: fitSeeds, betaSweep: { points: betaSweep, monotoneDecreasing: betaMonotone, monotoneTo15: betaMonotoneTo15, maxRebound } },
@@ -417,7 +428,7 @@ const out = {
 const md = [];
 md.push(`# Модель с расширенным состоянием P(g | x, g_prev, r mod 30, e)`);
 md.push('');
-md.push(`Сгенерировано scripts/markov-model.mjs, ${out.generatedAt}${quick ? ' (QUICK)' : ''}.`);
+md.push(`Сгенерировано scripts/markov-model.mjs @ git ${gitCommit} (sha256 скрипта: ${scriptSha}), ${out.generatedAt}${quick ? ' (QUICK)' : ''}. Прогон детерминирован (splitmix32, фиксированные сиды): перезапуск опубликованного скрипта воспроизводит все числа отчёта.`);
 md.push('');
 md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): с вероятностью p = min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} — инъекция twin, g = 2; иначе обычный шаг: mult = 1 + beta·(1 − g_prev/ln x), raw ~ Gamma(k, среднее m). Полная формула среднего: m = max(3, (ln x · mult − 2p)/(1 − p) − e) — включает поправку на вероятность инъекции twin, вычет компенсации e и нижнюю границу 3; сокращённая запись ln x · mult — интуитивное описание роли beta. Безпараметрический residue-шаг: g' = ближайшее чётное с разрешённым (r + g') mod 30; при равных расстояниях до двух кандидатов действует правило tie ('small' — меньший, контролируется ниже; random использует отдельный поток tieRnd = splitmix32(seed ^ 0x9e3779b9), не сдвигающий основной поток случайных чисел). Состояние компенсации плотности обновляется кусочно: e_{n+1} = e_n + 0.002·(g'_n − raw_n − e_n) на обычном шаге; e_{n+1} = e_n при инъекции twin (raw не определён). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения. Генерация продолжается до первого элемента ≥ X (с явной проверкой покрытия после генерации), статистики считаются с обрезкой по X — плотность модели не фиксируется числом элементов.`);
 md.push('');
