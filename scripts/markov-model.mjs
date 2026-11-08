@@ -452,7 +452,7 @@ for (const p of out.fit.betaSweep.points) {
   md.push(`| ${p.beta.toFixed(3)} | ${p.rho1det.toFixed(4)} |`);
 }
 md.push('');
-md.push(`Зависимость ${out.fit.betaSweep.monotoneDecreasing ? '**монотонно убывает** на всём [0, 2]' : `монотонно убывает на [0, 1.5]${out.fit.betaSweep.monotoneTo15 ? '' : ' (с нарушением)'}`}; на [1.5, 2] — плато с отскоком не более ${out.fit.betaSweep.maxRebound.toFixed(5)} (уровень шума оценки ±0.0004 при 5 сидах). Подобранный beta = ${out.fit.beta} и цель фита −0.04 лежат в строго монотонной области — бисекция обоснована.`);
+md.push(`На проверенной сетке (17 точек, шаг 0.125) зависимость ${out.fit.betaSweep.monotoneDecreasing ? 'монотонно убывает на всём [0, 2]' : `монотонно убывает на [0, 1.5]${out.fit.betaSweep.monotoneTo15 ? '' : ' (с нарушением)'}`}; на [1.5, 2] — плато с отскоком не более ${out.fit.betaSweep.maxRebound.toFixed(5)} (уровень шума оценки ±0.0004 при 5 сидах). Проверка по конечной сетке не доказывает монотонность между точками; для практического обоснования бисекции этого достаточно: подобранный beta = ${out.fit.beta} и цель фита −0.04 лежат глубоко в монотонной области.`);
 md.push('');
 md.push(`## Валидация (параметры заморожены)`);
 md.push('');
@@ -481,6 +481,27 @@ md.push(`| real | ${races.real.d4} | ${races.real.d6} | — | +${races.real.drif
 for (const [tie, c] of Object.entries(out.validation.tieControls)) {
   md.push(`| ${tie} | ${c.d4.mean.toFixed(0)} ± ${c.d4.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} | ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)} | ${c.drift6.mean.toFixed(1)} ± ${c.drift6.sd.toFixed(1)} | ${(100 * c.residue5.mean).toFixed(2)} | ${c.mod6.m0.mean.toFixed(1)}/${c.mod6.m2.mean.toFixed(1)}/${c.mod6.m4.mean.toFixed(1)} | ${c.meanGap.mean.toFixed(2)} | ${c.pairs306.mean.toFixed(3)} ± ${c.pairs306.sd.toFixed(3)} |`);
 }
+md.push('');
+md.push(`### Диагностика карты переходов nearest-allowed (статика, без прогонов)`);
+md.push('');
+md.push(`| r mod 30 | r mod 6 | доступные малые промежутки 2–10 | среднее смещение округления (raw 2–60) |`);
+md.push(`|---|---|---|---|`);
+const transitionDiag = ALLOWED30.map((r) => {
+  const small = [2, 4, 6, 8, 10].filter((g) => ALLOWED30.includes((r + g) % 30));
+  let disp = 0;
+  let cnt = 0;
+  for (let raw = 2; raw <= 60; raw += 2) {
+    const g = nearestAllowed(r, raw, 'small', null, { n: 0 });
+    disp += g - raw;
+    cnt++;
+  }
+  return { r, small, meanDisp: disp / cnt };
+});
+for (const row of transitionDiag) {
+  md.push(`| ${row.r} | ${row.r % 6 === 1 ? '1' : '5'} | ${row.small.join(', ') || '—'} | ${row.meanDisp >= 0 ? '+' : ''}${row.meanDisp.toFixed(2)} |`);
+}
+md.push('');
+md.push(`Статическая карта объясняет асимметрию, питающую остаточную гонку: twin-классы {11, 17, 29} — все ≡ 5 mod 6, и каждый twin сажает следующий элемент в класс 1 mod 6; из вычетов 1 mod 6 ({1, 19}) малые промежутки 2–4 недоступны вовсе; смещение округления вычетно-условно — у twin-классов {11, 17, 29} оно вдвое больше по модулю (−0.40 против −0.20…−0.27 у классов 1 mod 6). Компенсация e поглощает среднюю часть смещения по всему потоку, но не её вычетную структуру.`);
 md.push('');
 md.push(`### Пары per-gap на [2, 3·10⁷]: пары(g)/пары(6) — real, модель, 𝔖(g)/𝔖(6)`);
 md.push('');
