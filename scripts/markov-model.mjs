@@ -526,9 +526,9 @@ for (const [tie, c] of Object.entries(out.validation.tieControls)) {
   md.push(`| ${tie} | ${c.d4.mean.toFixed(0)} ± ${c.d4.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} | ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)} | ${c.drift6.mean.toFixed(1)} ± ${c.drift6.sd.toFixed(1)} | ${(100 * c.residue5.mean).toFixed(2)} | ${c.mod6.m0.mean.toFixed(1)}/${c.mod6.m2.mean.toFixed(1)}/${c.mod6.m4.mean.toFixed(1)} | ${c.meanGap.mean.toFixed(2)} | ${c.pairs306.mean.toFixed(3)} ± ${c.pairs306.sd.toFixed(3)} |`);
 }
 md.push('');
-md.push(`### Разложение Δ₆ по типам переходов (30 сидов 401–430, mean ± sd; каждый twin-шаг вносит −1 — следующий элемент всегда в классе 1 mod 6)`);
+md.push(`### Разложение Δ₆ по типам переходов (30 сидов 401–430, mean ± sd; каждая принудительная twin-инъекция вносит −1 — следующий элемент всегда в классе 1 mod 6; обычные Gamma-шаги после округления также могут дать промежуток 2 — такие шаги учтены в обычных)`);
 md.push('');
-md.push(`| Вариант | twin-шагов | вклад twin-шагов | вклад обычных шагов | Δ₆ всего |`);
+md.push(`| Вариант | принудительных twin-инъекций | вклад twin-инъекций | вклад обычных шагов | Δ₆ всего |`);
 md.push(`|---|---|---|---|---|`);
 for (const [tie, c] of Object.entries(out.validation.tieControls)) {
   md.push(`| ${tie} | ${c.decomposition.twinSteps.mean.toFixed(0)} | ${c.decomposition.twinContrib.mean.toFixed(0)} ± ${c.decomposition.twinContrib.sd.toFixed(0)} | ${c.decomposition.regularContrib.mean.toFixed(0)} ± ${c.decomposition.regularContrib.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} |`);
@@ -540,7 +540,7 @@ for (const tie of ['small', 'random']) {
   md.push('');
   md.push(`**${tie}:**`);
   md.push('');
-  md.push(`| r | mod 6 | шагов | twin, % | вклад Δ₆ | смещение (взвешенное) |`);
+  md.push(`| r | mod 6 | шагов | инъекции, % | вклад Δ₆ | смещение (взвешенное) |`);
   md.push(`|---|---|---|---|---|---|`);
   for (const row of c.perResidue) {
     md.push(`| ${row.r} | ${row.r % 6 === 1 ? '1' : '5'} | ${row.steps.mean.toFixed(0)} | ${row.twinShare.mean.toFixed(1)} | ${row.contrib.mean.toFixed(0)} ± ${row.contrib.sd.toFixed(0)} | ${row.dispWeighted.mean >= 0 ? '+' : ''}${row.dispWeighted.mean.toFixed(3)} |`);
@@ -585,7 +585,7 @@ for (const [X, r] of Object.entries(transfer)) {
   md.push(`| ${Number(X).toExponential(0)} | ${r.twinIndex.mean.toFixed(3)} / ${r.real.twinIndex.toFixed(3)} | ${r.dispersion.mean.toFixed(3)} / ${r.real.dispersion.toFixed(3)} | ${r.rho1det.mean.toFixed(4)} / ${r.real.rho1det.toFixed(4)} |`);
 }
 md.push('');
-md.push(`Интерпретация: FIT-статистики совпадают по построению. Разложение Δ₆ по типам переходов разделяет два эффекта, которые не следует смешивать: (1) недостаточная частота twin-шагов — модель 75.8k против ~152.9k у реальных (twin-классы покрывают лишь 3 из 8 разрешённых вычетов); (2) распределение обычных шагов между классами вычетов — при симметричном tie обычные шаги компенсируют twin-втекание лишь на ~55% (+41.8k при −75.8k), тогда как у реальных коэффициент компенсации ≈ 1.00 (+153.3k при −152.9k → +379). Остаточная гонка — разница этих вкладов, локализованная на вычетах с бедным меню малых промежутков (r = 29: −80k, r = 1: −38k). В исследованных конфигурациях локальные правила генерации промежутков не обеспечили правильный баланс вычетов; результаты указывают на необходимость зависимостей следующего порядка (широкие twin-классы или вычетная компенсация).`);
+md.push(`Интерпретация: FIT-статистики совпадают по построению. Разложение Δ₆ по типам переходов разделяет два эффекта, которые не следует смешивать. (1) Частота принудительных twin-инъекций: 75.8k у модели против ~152.9k настоящих twin-пар у реальных; прямое сравнение некорректно — обычные Gamma-шаги после округления также порождают промежуток 2 (общая доля двоек модели ≈7.5%, из них инъекции 4.08%, остальные ≈3.5% — округление из twin-классов), и такие шаги учтены в обычных. (2) Компенсация обычными шагами: при симметричном tie они дают +41.8k при twin-втекании −75.8k — коэффициент ≈0.55, тогда как у реальных обычные переходы перекрывают twin-вклад до +379 — коэффициент ≈1.00. Остаточная гонка — разница этих вкладов, локализованная на вычетах с бедным меню малых промежутков (r = 29: −80k, r = 1: −38k). В исследованных конфигурациях локальные правила генерации промежутков не обеспечили правильный баланс вычетов; результаты указывают на необходимость зависимостей следующего порядка (широкие twin-классы или вычетная компенсация).`);
 
 writeFileSync(path.join(resultsDir, 'markov-model.json'), JSON.stringify(out));
 writeFileSync(path.join(resultsDir, 'markov-model.md'), md.join('\n') + '\n');
