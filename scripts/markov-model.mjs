@@ -52,7 +52,7 @@ function gammaSample(rnd, shape, mean) {
   return gammaByShape(rnd, shape, mean / shape);
 }
 
-function nearestAllowed(x, gRaw, tie, rnd, tieCounter) {
+function nearestAllowed(x, gRaw, tie, tieRnd, tieCounter) {
   let g0 = Math.max(2, Math.round(gRaw / 2) * 2);
   const r = x % 30;
   for (let off = 0; off < 60; off += 2) {
@@ -60,7 +60,7 @@ function nearestAllowed(x, gRaw, tie, rnd, tieCounter) {
     const allowed = cands.filter((g) => g >= 2 && ALLOWED30.includes((r + g) % 30));
     if (allowed.length === 0) continue;
     if (allowed.length === 1 || tie === 'small') return allowed[0];
-    if (tie === 'random') return rnd() < 0.5 ? allowed[0] : allowed[allowed.length - 1];
+    if (tie === 'random') return tieRnd() < 0.5 ? allowed[0] : allowed[allowed.length - 1];
     tieCounter.n += 1;
     return tieCounter.n % 2 === 1 ? allowed[0] : allowed[allowed.length - 1];
   }
