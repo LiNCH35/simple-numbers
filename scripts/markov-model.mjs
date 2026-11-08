@@ -68,7 +68,10 @@ function nearestAllowed(x, gRaw, tie, tieRnd, tieCounter) {
 }
 
 function newDiag() {
-  return [...ALLOWED30.map((r) => ({ r, steps: 0, twins: 0, contrib: 0, dispSum: 0, dispCnt: 0 })), { r: 3, steps: 0, twins: 0, contrib: 0, dispSum: 0, dispCnt: 0 }];
+  return {
+    residues: ALLOWED30.map((r) => ({ r, steps: 0, twins: 0, contrib: 0, dispSum: 0, dispCnt: 0 })),
+    initial: { steps: 0, twins: 0, contrib: 0, dispSum: 0, dispCnt: 0 }
+  };
 }
 
 function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small', diag = null }) {
@@ -103,7 +106,7 @@ function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small', dia
     seq.push(x);
     if (diag && x <= xTarget) {
       const idx = ALLOWED30.indexOf(rPrev);
-      const d = diag[idx >= 0 ? idx : diag.length - 1];
+      const d = idx >= 0 ? diag.residues[idx] : diag.initial;
       d.steps += 1;
       if (twin) d.twins += 1;
       d.contrib += (x % 6 === 5) ? 1 : -1;
@@ -358,13 +361,15 @@ const driftAgg = (key) => meanSd(valRuns.map((r) => r[key]));
 const tieSeeds = [];
 for (let s = 401; s <= 430; s++) tieSeeds.push(s);
 const tieControls = {};
+const diagTwins = (d) => d.residues.reduce((s, x) => s + x.twins, 0) + d.initial.twins;
+const diagContrib = (d) => d.residues.reduce((s, x) => s + x.contrib, 0) + d.initial.contrib;
 for (const tie of ['small', 'random', 'alternate']) {
   const runs = [];
   for (const seed of tieSeeds) {
     const diag = newDiag();
     const seq = generateMarkov({ seed, xTarget: X_FIT, kappa, kShape: k, beta, tie, diag });
     const st = statsOf(seq, X_FIT);
-    const totalContrib = diag.reduce((s, d) => s + d.contrib, 0);
+    const totalContrib = diagContrib(diag);
     if (totalContrib !== st.d6) throw new Error(`diag decomposition mismatch: ${totalContrib} vs d6 ${st.d6}`);
     st.pairs3 = pairsOf(seq, X_FIT, [30000000])[30000000];
     st._diag = diag;
@@ -372,9 +377,10 @@ for (const tie of ['small', 'random', 'alternate']) {
   }
   const aggT = (key) => meanSd(runs.map((r) => r[key]));
   const m6t = (sub) => meanSd(runs.map((r) => r.mod6[sub]));
-  const twinSteps = meanSd(runs.map((r) => r._diag.reduce((s, d) => s + d.twins, 0)));
-  const twinContrib = meanSd(runs.map((r) => -r._diag.reduce((s, d) => s + d.twins, 0)));
-  const totalContrib = meanSd(runs.map((r) => r._diag.reduce((s, d) => s + d.contrib, 0)));
+  const twinSteps = meanSd(runs.map((r) => diagTwins(r._diag)));
+  const twinContrib = meanSd(runs.map((r) => -diagTwins(r._diag)));
+  const regularContrib = meanSd(runs.map((r) => diagContrib(r._diag) + diagTwins(r._diag)));
+  const totalContrib = meanSd(runs.map((r) => diagContrib(r._diag)));
   tieControls[tie] = {
     seeds: tieSeeds.length,
     d4: aggT('d4'),
@@ -389,15 +395,15 @@ for (const tie of ['small', 'random', 'alternate']) {
     decomposition: {
       twinSteps,
       twinContrib,
-      regularContrib: { mean: totalContrib.mean - twinContrib.mean, sd: Math.sqrt(totalContrib.sd ** 2 + twinContrib.sd ** 2) },
+      regularContrib,
       total: totalContrib
     },
     perResidue: ALLOWED30.map((r, i) => ({
       r,
-      steps: meanSd(runs.map((run) => run._diag[i].steps)),
-      twinShare: meanSd(runs.map((run) => (100 * run._diag[i].twins) / Math.max(1, run._diag[i].steps))),
-      contrib: meanSd(runs.map((run) => run._diag[i].contrib)),
-      dispWeighted: meanSd(runs.map((run) => run._diag[i].dispCnt > 0 ? run._diag[i].dispSum / run._diag[i].dispCnt : 0))
+      steps: meanSd(runs.map((run) => run._diag.residues[i].steps)),
+      twinShare: meanSd(runs.map((run) => (100 * run._diag.residues[i].twins) / Math.max(1, run._diag.residues[i].steps))),
+      contrib: meanSd(runs.map((run) => run._diag.residues[i].contrib)),
+      dispWeighted: meanSd(runs.map((run) => run._diag.residues[i].dispCnt > 0 ? run._diag.residues[i].dispSum / run._diag.residues[i].dispCnt : 0))
     }))
   };
   const c = tieControls[tie];
@@ -579,7 +585,7 @@ for (const [X, r] of Object.entries(transfer)) {
   md.push(`| ${Number(X).toExponential(0)} | ${r.twinIndex.mean.toFixed(3)} / ${r.real.twinIndex.toFixed(3)} | ${r.dispersion.mean.toFixed(3)} / ${r.real.dispersion.toFixed(3)} | ${r.rho1det.mean.toFixed(4)} / ${r.real.rho1det.toFixed(4)} |`);
 }
 md.push('');
-md.push(`Интерпретация: FIT-статистики совпадают по построению. Разложение Δ₆ по типам переходов отвечает на вопрос о балансе вычетов: при симметричном tie (random/alternate) обычные шаги переворачиваются в +42k — в сторону реального bias — и остаток −34k оказывается некомпенсированным вкладом twin-шагов (−76k), локализованным на вычетах с бедным меню малых промежутков (r = 29: −80k, r = 1: −38k). В исследованных конфигурациях локальные правила генерации промежутков не обеспечили правильный баланс вычетов; результаты указывают на необходимость зависимостей следующего порядка (широкие twin-классы или вычетная компенсация).`);
+md.push(`Интерпретация: FIT-статистики совпадают по построению. Разложение Δ₆ по типам переходов разделяет два эффекта, которые не следует смешивать: (1) недостаточная частота twin-шагов — модель 75.8k против ~152.9k у реальных (twin-классы покрывают лишь 3 из 8 разрешённых вычетов); (2) распределение обычных шагов между классами вычетов — при симметричном tie обычные шаги компенсируют twin-втекание лишь на ~55% (+41.8k при −75.8k), тогда как у реальных коэффициент компенсации ≈ 1.00 (+153.3k при −152.9k → +379). Остаточная гонка — разница этих вкладов, локализованная на вычетах с бедным меню малых промежутков (r = 29: −80k, r = 1: −38k). В исследованных конфигурациях локальные правила генерации промежутков не обеспечили правильный баланс вычетов; результаты указывают на необходимость зависимостей следующего порядка (широкие twin-классы или вычетная компенсация).`);
 
 writeFileSync(path.join(resultsDir, 'markov-model.json'), JSON.stringify(out));
 writeFileSync(path.join(resultsDir, 'markov-model.md'), md.join('\n') + '\n');
