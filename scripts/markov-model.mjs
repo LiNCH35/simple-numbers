@@ -67,7 +67,11 @@ function nearestAllowed(x, gRaw, tie, tieRnd, tieCounter) {
   return g0;
 }
 
-function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small' }) {
+function newDiag() {
+  return [...ALLOWED30.map((r) => ({ r, steps: 0, twins: 0, contrib: 0, dispSum: 0, dispCnt: 0 })), { r: 3, steps: 0, twins: 0, contrib: 0, dispSum: 0, dispCnt: 0 }];
+}
+
+function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small', diag = null }) {
   const rnd = splitmix32(seed);
   const tieRnd = splitmix32(seed ^ 0x9e3779b9);
   const seq = [2, 3];
@@ -81,10 +85,13 @@ function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small' }) {
     if (guard > 2e9) break;
     const lnx = Math.log(x);
     const twinP = Math.min(kappa / lnx, 0.9);
+    const rPrev = x % 30;
     let g;
     let raw = null;
-    if (TWIN_CLASSES.includes(x % 30) && rnd() < twinP) {
+    let twin = false;
+    if (TWIN_CLASSES.includes(rPrev) && rnd() < twinP) {
       g = 2;
+      twin = true;
     } else {
       const mult = Math.max(0.5, Math.min(1.5, 1 + beta * (1 - prevGap / lnx)));
       const m = Math.max(3, (lnx * mult - 2 * twinP) / (1 - twinP) - emaDisp);
@@ -94,6 +101,17 @@ function generateMarkov({ seed, xTarget, kappa, kShape, beta, tie = 'small' }) {
     }
     x += g;
     seq.push(x);
+    if (diag && x <= xTarget) {
+      const idx = ALLOWED30.indexOf(rPrev);
+      const d = diag[idx >= 0 ? idx : diag.length - 1];
+      d.steps += 1;
+      if (twin) d.twins += 1;
+      d.contrib += (x % 6 === 5) ? 1 : -1;
+      if (raw !== null) {
+        d.dispSum += g - raw;
+        d.dispCnt += 1;
+      }
+    }
     prevGap = g;
   }
   if (seq[seq.length - 1] < xTarget) {
@@ -343,13 +361,20 @@ const tieControls = {};
 for (const tie of ['small', 'random', 'alternate']) {
   const runs = [];
   for (const seed of tieSeeds) {
-    const seq = generateMarkov({ seed, xTarget: X_FIT, kappa, kShape: k, beta, tie });
+    const diag = newDiag();
+    const seq = generateMarkov({ seed, xTarget: X_FIT, kappa, kShape: k, beta, tie, diag });
     const st = statsOf(seq, X_FIT);
+    const totalContrib = diag.reduce((s, d) => s + d.contrib, 0);
+    if (totalContrib !== st.d6) throw new Error(`diag decomposition mismatch: ${totalContrib} vs d6 ${st.d6}`);
     st.pairs3 = pairsOf(seq, X_FIT, [30000000])[30000000];
+    st._diag = diag;
     runs.push(st);
   }
   const aggT = (key) => meanSd(runs.map((r) => r[key]));
   const m6t = (sub) => meanSd(runs.map((r) => r.mod6[sub]));
+  const twinSteps = meanSd(runs.map((r) => r._diag.reduce((s, d) => s + d.twins, 0)));
+  const twinContrib = meanSd(runs.map((r) => -r._diag.reduce((s, d) => s + d.twins, 0)));
+  const totalContrib = meanSd(runs.map((r) => r._diag.reduce((s, d) => s + d.contrib, 0)));
   tieControls[tie] = {
     seeds: tieSeeds.length,
     d4: aggT('d4'),
@@ -360,10 +385,23 @@ for (const tie of ['small', 'random', 'alternate']) {
     residue5: aggT('residue5'),
     meanGap: aggT('meanGap'),
     mod6: { m0: m6t('m0'), m2: m6t('m2'), m4: m6t('m4') },
-    pairs306: meanSd(runs.map((r) => r.pairs3[30] / r.pairs3[6]))
+    pairs306: meanSd(runs.map((r) => r.pairs3[30] / r.pairs3[6])),
+    decomposition: {
+      twinSteps,
+      twinContrib,
+      regularContrib: { mean: totalContrib.mean - twinContrib.mean, sd: Math.sqrt(totalContrib.sd ** 2 + twinContrib.sd ** 2) },
+      total: totalContrib
+    },
+    perResidue: ALLOWED30.map((r, i) => ({
+      r,
+      steps: meanSd(runs.map((run) => run._diag[i].steps)),
+      twinShare: meanSd(runs.map((run) => (100 * run._diag[i].twins) / Math.max(1, run._diag[i].steps))),
+      contrib: meanSd(runs.map((run) => run._diag[i].contrib)),
+      dispWeighted: meanSd(runs.map((run) => run._diag[i].dispCnt > 0 ? run._diag[i].dispSum / run._diag[i].dispCnt : 0))
+    }))
   };
   const c = tieControls[tie];
-  console.log(`tie ${tie} (${c.seeds} seeds): d6 ${c.d6.mean.toFixed(0)}±${c.d6.sd.toFixed(0)} [halves ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)}], share5 ${(100 * c.residue5.mean).toFixed(2)}%, pairs306 ${c.pairs306.mean.toFixed(3)}`);
+  console.log(`tie ${tie} (${c.seeds} seeds): d6 ${c.d6.mean.toFixed(0)}±${c.d6.sd.toFixed(0)} [halves ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)}], decomp twin ${c.decomposition.twinContrib.mean.toFixed(0)} / regular ${c.decomposition.regularContrib.mean.toFixed(0)}, share5 ${(100 * c.residue5.mean).toFixed(2)}%, pairs306 ${c.pairs306.mean.toFixed(3)}`);
 }
 
 const transfer = {};
@@ -434,7 +472,7 @@ md.push(`Механика (модель с расширенным состоян
 md.push('');
 md.push(`**Сплит статистик и сидов (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 101–105). VALIDATION на независимой выборке — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, средний промежуток после twin (сиды 201–210, не пересекаются с fit); перенос twinIndex/disp/ρ₁det на 10⁶ и 10⁸ (сиды 301–305). Параметры после фита заморожены.`);
 md.push('');
-md.push(`## Фит (качество подгонки, mean ± sd по ${valSeeds.length} сидам)`);
+md.push(`## Проверка целевых статистик на независимых сидах (201–210; mean ± sd)`);
 md.push('');
 md.push(`| Статистика | real @ 3·10⁷ | модель |`);
 md.push(`|---|---|---`);
@@ -482,9 +520,30 @@ for (const [tie, c] of Object.entries(out.validation.tieControls)) {
   md.push(`| ${tie} | ${c.d4.mean.toFixed(0)} ± ${c.d4.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} | ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)} | ${c.drift6.mean.toFixed(1)} ± ${c.drift6.sd.toFixed(1)} | ${(100 * c.residue5.mean).toFixed(2)} | ${c.mod6.m0.mean.toFixed(1)}/${c.mod6.m2.mean.toFixed(1)}/${c.mod6.m4.mean.toFixed(1)} | ${c.meanGap.mean.toFixed(2)} | ${c.pairs306.mean.toFixed(3)} ± ${c.pairs306.sd.toFixed(3)} |`);
 }
 md.push('');
+md.push(`### Разложение Δ₆ по типам переходов (30 сидов 401–430, mean ± sd; каждый twin-шаг вносит −1 — следующий элемент всегда в классе 1 mod 6)`);
+md.push('');
+md.push(`| Вариант | twin-шагов | вклад twin-шагов | вклад обычных шагов | Δ₆ всего |`);
+md.push(`|---|---|---|---|---|`);
+for (const [tie, c] of Object.entries(out.validation.tieControls)) {
+  md.push(`| ${tie} | ${c.decomposition.twinSteps.mean.toFixed(0)} | ${c.decomposition.twinContrib.mean.toFixed(0)} ± ${c.decomposition.twinContrib.sd.toFixed(0)} | ${c.decomposition.regularContrib.mean.toFixed(0)} ± ${c.decomposition.regularContrib.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} |`);
+}
+md.push('');
+md.push(`### Вклад по текущим вычетам r mod 30 (mean ± sd по 30 сидам; смещение взвешено фактическим распределением raw)`);
+for (const tie of ['small', 'random']) {
+  const c = out.validation.tieControls[tie];
+  md.push('');
+  md.push(`**${tie}:**`);
+  md.push('');
+  md.push(`| r | mod 6 | шагов | twin, % | вклад Δ₆ | смещение (взвешенное) |`);
+  md.push(`|---|---|---|---|---|---|`);
+  for (const row of c.perResidue) {
+    md.push(`| ${row.r} | ${row.r % 6 === 1 ? '1' : '5'} | ${row.steps.mean.toFixed(0)} | ${row.twinShare.mean.toFixed(1)} | ${row.contrib.mean.toFixed(0)} ± ${row.contrib.sd.toFixed(0)} | ${row.dispWeighted.mean >= 0 ? '+' : ''}${row.dispWeighted.mean.toFixed(3)} |`);
+  }
+}
+md.push('');
 md.push(`### Диагностика карты переходов nearest-allowed (статика, без прогонов)`);
 md.push('');
-md.push(`| r mod 30 | r mod 6 | доступные малые промежутки 2–10 | среднее смещение округления (raw 2–60) |`);
+md.push(`| r mod 30 | r mod 6 | доступные малые промежутки 2–10 | среднее смещение при равномерном переборе raw = 2, 4, …, 60 |`);
 md.push(`|---|---|---|---|`);
 const transitionDiag = ALLOWED30.map((r) => {
   const small = [2, 4, 6, 8, 10].filter((g) => ALLOWED30.includes((r + g) % 30));
@@ -520,7 +579,7 @@ for (const [X, r] of Object.entries(transfer)) {
   md.push(`| ${Number(X).toExponential(0)} | ${r.twinIndex.mean.toFixed(3)} / ${r.real.twinIndex.toFixed(3)} | ${r.dispersion.mean.toFixed(3)} / ${r.real.dispersion.toFixed(3)} | ${r.rho1det.mean.toFixed(4)} / ${r.real.rho1det.toFixed(4)} |`);
 }
 md.push('');
-md.push(`Интерпретация: FIT-статистики совпадают по построению. Вопрос валидации — закрывает ли условность (зависимость от g_prev и r mod 30) статистики, которые не подгонялись: гонки, пары, mod6. Решёточное округление к ближайшему разрешённому вычету не перенаправляет принудительно — баланс вычетов должен получиться сам.`);
+md.push(`Интерпретация: FIT-статистики совпадают по построению. Разложение Δ₆ по типам переходов отвечает на вопрос о балансе вычетов: при симметричном tie (random/alternate) обычные шаги переворачиваются в +42k — в сторону реального bias — и остаток −34k оказывается некомпенсированным вкладом twin-шагов (−76k), локализованным на вычетах с бедным меню малых промежутков (r = 29: −80k, r = 1: −38k). В исследованных конфигурациях локальные правила генерации промежутков не обеспечили правильный баланс вычетов; результаты указывают на необходимость зависимостей следующего порядка (широкие twin-классы или вычетная компенсация).`);
 
 writeFileSync(path.join(resultsDir, 'markov-model.json'), JSON.stringify(out));
 writeFileSync(path.join(resultsDir, 'markov-model.md'), md.join('\n') + '\n');
