@@ -528,7 +528,7 @@ for (const [tie, c] of Object.entries(out.validation.tieControls)) {
 md.push('');
 md.push(`### Разложение Δ₆ по типам переходов (30 сидов 401–430, mean ± sd; каждая принудительная twin-инъекция вносит −1 — следующий элемент всегда в классе 1 mod 6; обычные Gamma-шаги после округления также могут дать промежуток 2 — такие шаги учтены в обычных)`);
 md.push('');
-md.push(`| Вариант | принудительных twin-инъекций | вклад twin-инъекций | вклад обычных шагов | Δ₆ всего |`);
+md.push(`| Вариант | Принудительных twin-инъекций | Вклад принудительных инъекций | Вклад обычных шагов (включая округлившиеся до g=2) | Δ₆ всего |`);
 md.push(`|---|---|---|---|---|`);
 for (const [tie, c] of Object.entries(out.validation.tieControls)) {
   md.push(`| ${tie} | ${c.decomposition.twinSteps.mean.toFixed(0)} | ${c.decomposition.twinContrib.mean.toFixed(0)} ± ${c.decomposition.twinContrib.sd.toFixed(0)} | ${c.decomposition.regularContrib.mean.toFixed(0)} ± ${c.decomposition.regularContrib.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} |`);
