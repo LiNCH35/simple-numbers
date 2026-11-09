@@ -531,7 +531,7 @@ md.push('');
 md.push(`| Вариант | Принудительных twin-инъекций | Вклад принудительных инъекций | Вклад обычных шагов (включая округлившиеся до g=2) | Δ₆ всего |`);
 md.push(`|---|---|---|---|---|`);
 for (const [tie, c] of Object.entries(out.validation.tieControls)) {
-  md.push(`| ${tie} | ${c.decomposition.twinSteps.mean.toFixed(0)} | ${c.decomposition.twinContrib.mean.toFixed(0)} ± ${c.decomposition.twinContrib.sd.toFixed(0)} | ${c.decomposition.regularContrib.mean.toFixed(0)} ± ${c.decomposition.regularContrib.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} |`);
+  md.push(`| ${tie} | ${c.decomposition.twinSteps.mean.toFixed(0)} ± ${c.decomposition.twinSteps.sd.toFixed(0)} | ${c.decomposition.twinContrib.mean.toFixed(0)} ± ${c.decomposition.twinContrib.sd.toFixed(0)} | ${c.decomposition.regularContrib.mean.toFixed(0)} ± ${c.decomposition.regularContrib.sd.toFixed(0)} | ${c.d6.mean.toFixed(0)} ± ${c.d6.sd.toFixed(0)} |`);
 }
 md.push('');
 md.push(`### Вклад по текущим вычетам r mod 30 (mean ± sd по 30 сидам; смещение взвешено фактическим распределением raw)`);
