@@ -411,6 +411,8 @@ for (const tie of ['small', 'random', 'alternate']) {
 }
 
 const transferScales = quick ? [1000000] : [1000000, 100000000];
+const scalePretty = { 1000000: '10⁶', 10000000: '10⁷', 100000000: '10⁸', 1000000000: '10⁹' };
+const transferRange = transferScales.map((X) => scalePretty[X] ?? X.toExponential(0)).join(' и ');
 const transfer = {};
 for (const X of transferScales) {
   const rows = [];
@@ -450,7 +452,7 @@ const out = {
   fit: { kappa, k, beta, rounds: round, targets: FIT_TARGETS, seeds: fitSeeds, betaSweep: { points: betaSweep, monotoneDecreasing: betaMonotone, monotoneTo15: betaMonotoneTo15, maxRebound } },
   fitSplit: {
     fitted: ['twinIndex (kappa)', 'var/mean² (k)', 'rho1det (beta)'],
-    validation: ['pairs 30/6 и per-gap vs S на общих интервалах', 'гонки d4/d6 + drift', 'mod6-гистограмма промежутков', 'перенос twin/disp/rho1det на 1e6 и 1e8', 'средний промежуток после twin']
+    validation: ['pairs 30/6 и per-gap vs S на общих интервалах', 'гонки d4/d6 + drift', 'mod6-гистограмма промежутков', `перенос twin/disp/rho1det на ${transferRange}`, 'средний промежуток после twin']
   },
   fitQuality: {
     twinIndex: agg('twinIndex'),
@@ -475,7 +477,6 @@ md.push('');
 md.push(`Сгенерировано scripts/markov-model.mjs @ git ${gitCommit} (sha256 скрипта: ${scriptSha}), ${out.generatedAt}${quick ? ' (QUICK)' : ''}. Прогон детерминирован (splitmix32, фиксированные сиды): перезапуск опубликованного скрипта воспроизводит все числа отчёта.`);
 md.push('');
 const valRange = `${valSeeds[0]}–${valSeeds[valSeeds.length - 1]}`;
-const transferRange = transferScales.map((X) => X.toExponential(0)).join(' и ');
 md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): с вероятностью p = min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} — инъекция twin, g = 2; иначе обычный шаг: mult = max(0.5, min(1.5, 1 + beta·(1 − g_prev/ln x))) — множитель ограничен диапазоном [0.5, 1.5]; raw ~ Gamma(k, среднее m). Полная формула среднего: m = max(3, (ln x · mult − 2p)/(1 − p) − e) — включает поправку на вероятность инъекции twin, вычет компенсации e и нижнюю границу 3; сокращённая запись ln x · mult — интуитивное описание роли beta. Безпараметрический residue-шаг: g' = ближайшее чётное с разрешённым (r + g') mod 30; при равных расстояниях до двух кандидатов действует правило tie ('small' — меньший, контролируется ниже; random использует отдельный поток tieRnd = splitmix32(seed ^ 0x9e3779b9), не сдвигающий основной поток случайных чисел). Состояние компенсации плотности обновляется кусочно: e_{n+1} = e_n + 0.002·(g'_n − raw_n − e_n) на обычном шаге; e_{n+1} = e_n при инъекции twin (raw не определён). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения. Генерация продолжается до первого элемента ≥ X (с явной проверкой покрытия после генерации), статистики считаются с обрезкой по X — плотность модели не фиксируется числом элементов.`);
 md.push('');
 if (quick) {
