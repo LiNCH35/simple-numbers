@@ -38,3 +38,6 @@ public/analysis*.json
 
 # Vitest
 __screenshots__/
+
+# Quick smoke report of markov-model (separate from the published results/markov-model.md)
+results/markov-model-quick.md

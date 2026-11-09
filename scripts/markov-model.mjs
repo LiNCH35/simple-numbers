@@ -410,9 +410,9 @@ for (const tie of ['small', 'random', 'alternate']) {
   console.log(`tie ${tie} (${c.seeds} seeds): d6 ${c.d6.mean.toFixed(0)}±${c.d6.sd.toFixed(0)} [halves ${c.d6Half1.mean.toFixed(0)} / ${c.d6Half2.mean.toFixed(0)}], decomp twin ${c.decomposition.twinContrib.mean.toFixed(0)} / regular ${c.decomposition.regularContrib.mean.toFixed(0)}, share5 ${(100 * c.residue5.mean).toFixed(2)}%, pairs306 ${c.pairs306.mean.toFixed(3)}`);
 }
 
+const transferScales = quick ? [1000000] : [1000000, 100000000];
 const transfer = {};
-for (const X of [1e6, 1e8]) {
-  if (quick && X === 1e8) continue;
+for (const X of transferScales) {
   const rows = [];
   for (const seed of transferSeeds) {
     const seq = generateMarkov({ seed, xTarget: X, kappa, kShape: k, beta });
@@ -474,11 +474,17 @@ md.push(`# Модель с расширенным состоянием P(g | x, 
 md.push('');
 md.push(`Сгенерировано scripts/markov-model.mjs @ git ${gitCommit} (sha256 скрипта: ${scriptSha}), ${out.generatedAt}${quick ? ' (QUICK)' : ''}. Прогон детерминирован (splitmix32, фиксированные сиды): перезапуск опубликованного скрипта воспроизводит все числа отчёта.`);
 md.push('');
+const valRange = `${valSeeds[0]}–${valSeeds[valSeeds.length - 1]}`;
+const transferRange = transferScales.map((X) => X.toExponential(0)).join(' и ');
 md.push(`Механика (модель с расширенным состоянием P(g | x, g_prev, r mod 30, e), а не строго марковская по (x, g_prev, r)): с вероятностью p = min(kappa/ln x, 0.9) и только из twin-классов r mod 30 ∈ {11, 17, 29} — инъекция twin, g = 2; иначе обычный шаг: mult = max(0.5, min(1.5, 1 + beta·(1 − g_prev/ln x))) — множитель ограничен диапазоном [0.5, 1.5]; raw ~ Gamma(k, среднее m). Полная формула среднего: m = max(3, (ln x · mult − 2p)/(1 − p) − e) — включает поправку на вероятность инъекции twin, вычет компенсации e и нижнюю границу 3; сокращённая запись ln x · mult — интуитивное описание роли beta. Безпараметрический residue-шаг: g' = ближайшее чётное с разрешённым (r + g') mod 30; при равных расстояниях до двух кандидатов действует правило tie ('small' — меньший, контролируется ниже; random использует отдельный поток tieRnd = splitmix32(seed ^ 0x9e3779b9), не сдвигающий основной поток случайных чисел). Состояние компенсации плотности обновляется кусочно: e_{n+1} = e_n + 0.002·(g'_n − raw_n − e_n) на обычном шаге; e_{n+1} = e_n при инъекции twin (raw не определён). В отличие от lattice30 нет перенаправления +2 — баланс вычетов не задаётся правилом, а получается из распределения. Генерация продолжается до первого элемента ≥ X (с явной проверкой покрытия после генерации), статистики считаются с обрезкой по X — плотность модели не фиксируется числом элементов.`);
 md.push('');
-md.push(`**Сплит статистик и сидов (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 101–105). VALIDATION на независимой выборке — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, средний промежуток после twin (сиды 201–210, не пересекаются с fit); перенос twinIndex/disp/ρ₁det на 10⁶ и 10⁸ (сиды 301–305). Параметры после фита заморожены.`);
+if (quick) {
+  md.push(`**QUICK-прогон: сокращённый набор проверок** (валидация на ${valSeeds.length} сидах, перенос только на ${transferRange}). Файл предназначен для смоука изменений, а не для публикации; опубликованный отчёт — results/markov-model.md (полный прогон без --quick).`);
+  md.push('');
+}
+md.push(`**Сплит статистик и сидов (объявлен до подбора):** FIT — twinIndex, var/mean², rho1det (по одной на ручку kappa/k/beta, масштаб X = 3·10⁷, сиды 101–105). VALIDATION на независимой выборке — пары (30/6 и per-gap против 𝔖 на общих интервалах 10⁶/10⁷/3·10⁷), гонки Чебышёва Δ₄/Δ₆ и drift, гистограмма промежутков mod 6, средний промежуток после twin (сиды ${valRange}, не пересекаются с fit); перенос twinIndex/disp/ρ₁det на ${transferRange} (сиды 301–305). Параметры после фита заморожены.`);
 md.push('');
-md.push(`## Проверка целевых статистик на независимых сидах (201–210; mean ± sd)`);
+md.push(`## Проверка целевых статистик на независимых сидах (${valRange}; mean ± sd)`);
 md.push('');
 md.push(`| Статистика | real @ 3·10⁷ | модель |`);
 md.push(`|---|---|---`);
@@ -587,6 +593,7 @@ for (const [X, r] of Object.entries(transfer)) {
 md.push('');
 md.push(`Интерпретация: FIT-статистики совпадают по построению. Разложение Δ₆ по типам переходов разделяет два эффекта, которые не следует смешивать. (1) Частота принудительных twin-инъекций: 75.8k у модели против ~152.9k настоящих twin-пар у реальных; прямое сравнение некорректно — обычные Gamma-шаги после округления также порождают промежуток 2 (общая доля двоек модели ≈7.5%, из них инъекции 4.08%, остальные ≈3.5% — округление из twin-классов), и такие шаги учтены в обычных. (2) Компенсация обычными шагами: при симметричном tie они дают +41.8k при twin-втекании −75.8k — коэффициент ≈0.55, тогда как у реальных обычные переходы перекрывают twin-вклад до +379 — коэффициент ≈1.00. Остаточная гонка — разница этих вкладов, локализованная на вычетах с бедным меню малых промежутков (r = 29: −80k, r = 1: −38k). В исследованных конфигурациях локальные правила генерации промежутков не обеспечили правильный баланс вычетов; результаты указывают на необходимость зависимостей следующего порядка (широкие twin-классы или вычетная компенсация).`);
 
-writeFileSync(path.join(resultsDir, 'markov-model.json'), JSON.stringify(out));
-writeFileSync(path.join(resultsDir, 'markov-model.md'), md.join('\n') + '\n');
-console.log(`written: results/markov-model.md, results/markov-model.json`);
+const reportBase = quick ? 'markov-model-quick' : 'markov-model';
+writeFileSync(path.join(resultsDir, `${reportBase}.json`), JSON.stringify(out));
+writeFileSync(path.join(resultsDir, `${reportBase}.md`), md.join('\n') + '\n');
+console.log(`written: results/${reportBase}.md, results/${reportBase}.json`);
